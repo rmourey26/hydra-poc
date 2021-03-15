@@ -1,5 +1,21 @@
 {
   "nodes": {
+    "cardanoNodeSrc": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1615671562,
+        "narHash": "sha256-qRPDvAoslI1ma7KU0H2uF3lOy0ig3IGVAOZvJZ3Hq5Q=",
+        "owner": "input-output-hk",
+        "repo": "cardano-node",
+        "rev": "7f137e32420532b5aff3f7104756d6d76ce4e730",
+        "type": "github"
+      },
+      "original": {
+        "owner": "input-output-hk",
+        "repo": "cardano-node",
+        "type": "github"
+      }
+    },
     "flake-utils": {
       "locked": {
         "lastModified": 1614513358,
@@ -102,6 +118,7 @@
     },
     "root": {
       "inputs": {
+        "cardanoNodeSrc": "cardanoNodeSrc",
         "flake-utils": "flake-utils",
         "haskellNix": "haskellNix",
         "nixpkgs": [
