@@ -2,20 +2,21 @@
 # likely going to be updated using the iohk-specific nixpkgs and a haskel.nix
 # derivation of our cabal.project.
 { compiler ? "ghc8104"
-  # Latest haskell.nix for more likely cache hits
+  # Use a recent haskell.nix, but pin to a version that's likely built by other
+  # CI jobs already (we use the one from cardano-node/nix/sources)
 , haskellNix ? import
     (builtins.fetchTarball
-      "https://github.com/input-output-hk/haskell.nix/archive/master.tar.gz")
+      "https://github.com/input-output-hk/haskell.nix/archive/962ecfed3a4fb656b5a91d89159291e00ed766bc.tar.gz")
     { }
   # Use same pkgs as haskell.nix for more likely cache hits
 , nixpkgsSrc ? haskellNix.sources.nixpkgs-2009
 , nixpkgsArgs ? haskellNix.nixpkgsArgs
 , pkgs ? import nixpkgsSrc nixpkgsArgs
-  # Use cardano-node master for more likely cache hits
+  # Use a recent, but pinned cardano-node for more likely cache hits
 , cardanoNodePkgs ? import
     (builtins.fetchTarball
-      "https://github.com/input-output-hk/cardano-node/archive/master.tar.gz")
-    { gitrev = "0b0ab070e71f7f29bb35dfc595c6a69772b1d866"; }
+      "https://github.com/input-output-hk/cardano-node/archive/5dc14fc1f3852d63923e05cd5a5b014c5c13c11b.tar.gz")
+    { gitrev = "5dc14fc1f3852d63923e05cd5a5b014c5c13c11b"; }
 }:
 with pkgs;
 let
