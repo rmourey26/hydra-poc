@@ -23,7 +23,10 @@ w1 :: Wallet
 w1 = Wallet 1
 
 w2 :: Wallet
-w2 = Wallet 2
+w2 = Wallet 10
+
+w3 :: Wallet
+w3 = Wallet 10
 
 theContract :: Contract () Schema SMContractError ()
 theContract = contract headParameters
@@ -72,25 +75,17 @@ tests =
               void $ Trace.nextSlot
               Trace.callEndpoint @"init" contractHandle ()
         , checkPredicate
-            "Single commit is acknowledged"
-            (assertNoFailedTransactions .&&. assertState (Collecting (CollectingState{stillNeedToCommit = [pubKey2], committedUtxos = [UTXO]})))
-            $ do
-              contractHandle <- Trace.activateContractWallet w1 theContract
-              Trace.callEndpoint @"setup" contractHandle ()
-              void $ Trace.nextSlot
-              Trace.callEndpoint @"init" contractHandle ()
-              void $ Trace.nextSlot
-              Trace.callEndpoint @"commit" contractHandle (pubKey1, [UTXO])
-        , checkPredicate
-            "Committing from all parties is acknowledged"
+            "External 'Commit' transactions from all parties is acknowledged by CollectCom"
             (assertNoFailedTransactions .&&. assertState (Collecting (CollectingState{stillNeedToCommit = [], committedUtxos = [UTXO, UTXO, UTXO]})))
             $ do
               contractHandle <- Trace.activateContractWallet w1 theContract
+              committer1 <- Trace.activateContractWallet w2 commitContract
+              committer2 <- Trace.activateContractWallet w3 commitContract
               Trace.callEndpoint @"setup" contractHandle ()
               void $ Trace.nextSlot
               Trace.callEndpoint @"init" contractHandle ()
               void $ Trace.nextSlot
-              Trace.callEndpoint @"commit" contractHandle (pubKey1, [UTXO])
+              Trace.callEndpoint @"commit" committer1 (pubKey1, [UTXO])
               void $ Trace.nextSlot
               Trace.callEndpoint @"commit" contractHandle (pubKey2, [UTXO, UTXO])
         ]
