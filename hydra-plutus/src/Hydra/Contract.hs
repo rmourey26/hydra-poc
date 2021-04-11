@@ -20,7 +20,7 @@ import qualified Prelude
 
 {-# INLINEABLE validate #-}
 validate :: HydraState -> HydraInput -> ValidatorCtx -> Bool
-validate Collecting _input _ctx = False
+validate (Collecting _) _input _ctx = False
 validate (Open OpenState{keyAggregate, eta}) (Close xi) _ctx =
   case close keyAggregate eta xi of
     Just{} -> True

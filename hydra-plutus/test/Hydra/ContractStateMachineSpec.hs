@@ -2,10 +2,11 @@
 
 module Hydra.ContractStateMachineSpec where
 
-import Hydra.ContractStateMachine
+import Hydra.CommitContract as Commit
+import Hydra.ContractStateMachine as SM
 
 import Cardano.Prelude
-import Hydra.Contract.Types (CollectingState (..), HeadParameters (..), HydraInput, HydraState (..), UTXO (UTXO), toDatumHash)
+import Hydra.Contract.Types (CollectingState (..), HeadParameters (..), HydraInput, HydraState (..), toDatumHash)
 import Hydra.MonetaryPolicy (hydraCurrencySymbol)
 import Hydra.Utils (datumAtAddress)
 import Ledger (PubKeyHash (..), Tx (..), TxOut, ValidatorCtx, txOutValue)
@@ -23,13 +24,16 @@ w1 :: Wallet
 w1 = Wallet 1
 
 w2 :: Wallet
-w2 = Wallet 10
+w2 = Wallet 20
 
 w3 :: Wallet
-w3 = Wallet 10
+w3 = Wallet 30
 
-theContract :: Contract () Schema SMContractError ()
-theContract = contract headParameters
+theHydraContract :: Contract () SM.Schema SMContractError ()
+theHydraContract = contract headParameters
+
+theCommitContract :: Contract () Commit.Schema CommitError ()
+theCommitContract = commitContract client
 
 pubKey1 :: PubKeyHash
 pubKey1 = PubKeyHash "party1pubkeyhash"
@@ -58,10 +62,10 @@ tests =
         [ -- checkCompiledContractPIR "test/Hydra/ContractStateMachine.pir" compiledScript
           checkPredicate
             "Expose 'collectCom' and 'close' endpoints"
-            ( endpointAvailable @"collectCom" theContract (Trace.walletInstanceTag w1)
-                .&&. endpointAvailable @"close" theContract (Trace.walletInstanceTag w1)
+            ( endpointAvailable @"collectCom" theHydraContract (Trace.walletInstanceTag w1)
+                .&&. endpointAvailable @"close" theHydraContract (Trace.walletInstanceTag w1)
             )
-            $ void (Trace.activateContractWallet w1 theContract)
+            $ void (Trace.activateContractWallet w1 theHydraContract)
         , checkPredicate
             "Closed state after setup > init > collectCom > close"
             (assertNoFailedTransactions .&&. assertStateIsClosed)
@@ -70,33 +74,33 @@ tests =
             "Collecting holds all keys after init"
             (assertNoFailedTransactions .&&. assertState (Collecting $ CollectingState (verificationKeys headParameters) []))
             $ do
-              contractHandle <- Trace.activateContractWallet w1 theContract
+              contractHandle <- Trace.activateContractWallet w1 theHydraContract
               Trace.callEndpoint @"setup" contractHandle ()
               void $ Trace.nextSlot
               Trace.callEndpoint @"init" contractHandle ()
         , checkPredicate
             "External 'Commit' transactions from all parties is acknowledged by CollectCom"
-            (assertNoFailedTransactions .&&. assertState (Collecting (CollectingState{stillNeedToCommit = [], committedUtxos = [UTXO, UTXO, UTXO]})))
+            (assertNoFailedTransactions .&&. assertState (Collecting (CollectingState [] [])))
             $ do
-              contractHandle <- Trace.activateContractWallet w1 theContract
-              committer1 <- Trace.activateContractWallet w2 commitContract
-              committer2 <- Trace.activateContractWallet w3 commitContract
+              contractHandle <- Trace.activateContractWallet w1 theHydraContract
+              committer1 <- Trace.activateContractWallet w2 theCommitContract
+              committer2 <- Trace.activateContractWallet w3 theCommitContract
               Trace.callEndpoint @"setup" contractHandle ()
               void $ Trace.nextSlot
               Trace.callEndpoint @"init" contractHandle ()
               void $ Trace.nextSlot
-              Trace.callEndpoint @"commit" committer1 (pubKey1, [UTXO])
+              Trace.callEndpoint @"commit" committer1 (Committing pubKey1 $ Ada.lovelaceValueOf 10)
               void $ Trace.nextSlot
-              Trace.callEndpoint @"commit" contractHandle (pubKey2, [UTXO, UTXO])
+              Trace.callEndpoint @"commit" committer2 (Committing pubKey2 $ Ada.lovelaceValueOf 15)
         ]
     ]
 
 assertState :: HydraState -> TracePredicate
-assertState = datumAtAddress contractAddress . toDatumHash
+assertState = datumAtAddress SM.contractAddress . toDatumHash
 
 assertStateIsClosed :: TracePredicate
 assertStateIsClosed =
-  datumAtAddress contractAddress (toDatumHash Closed)
+  datumAtAddress SM.contractAddress (toDatumHash Closed)
 
 assertInitTxShape :: HeadParameters -> UnbalancedTx -> Bool
 assertInitTxShape HeadParameters{verificationKeys} unbalancedTx =
@@ -125,25 +129,21 @@ collectAndClose = do
 
 callCollectCom :: Trace.EmulatorTrace ()
 callCollectCom = do
-  contractHandle <- Trace.activateContractWallet w1 theContract
+  contractHandle <- Trace.activateContractWallet w1 theHydraContract
   Trace.callEndpoint @"collectCom" contractHandle (CollectComParams $ Ada.lovelaceValueOf 42)
 
 callClose :: Trace.EmulatorTrace ()
 callClose = do
-  contractHandle <- Trace.activateContractWallet w1 theContract
+  contractHandle <- Trace.activateContractWallet w1 theHydraContract
   Trace.callEndpoint @"close" contractHandle ()
 
 setupInitCollectAndClose :: Trace.EmulatorTrace ()
 setupInitCollectAndClose = do
-  alice <- Trace.activateContractWallet w1 theContract
-  bob <- Trace.activateContractWallet w2 theContract
+  alice <- Trace.activateContractWallet w1 theHydraContract
+  --bob <- Trace.activateContractWallet w2 theHydraContract
   Trace.callEndpoint @"setup" alice ()
   void $ Trace.nextSlot
   Trace.callEndpoint @"init" alice ()
-  void $ Trace.nextSlot
-  Trace.callEndpoint @"commit" alice (pubKey1, [UTXO])
-  void $ Trace.nextSlot
-  Trace.callEndpoint @"commit" bob (pubKey2, [UTXO])
   void $ Trace.nextSlot
   Trace.callEndpoint @"collectCom" alice (CollectComParams $ Ada.lovelaceValueOf 42)
   void $ Trace.nextSlot

@@ -6,7 +6,7 @@
 module Hydra.ContractStateMachine where
 
 import Control.Monad (forever, guard, void)
-import Ledger (Address, PubKeyHash (..), Validator, Value, scriptAddress)
+import Ledger (Address, Validator, Value, scriptAddress)
 import qualified Ledger.Ada as Ada
 import qualified Ledger.Typed.Scripts as Scripts
 import Playground.Contract
@@ -27,8 +27,6 @@ transition ::
 transition s i = case (s, i) of
   (state@State{stateData = Initial}, Init params) ->
     Just (mempty, state{stateData = Collecting $ CollectingState (verificationKeys params) []})
-  (state@State{stateData = Collecting (CollectingState toCommit [])}, Commit pk _utxos) ->
-    Just (mempty, state{stateData = Collecting $ CollectingState (filter (/= pk) toCommit) []})
   (state@State{stateData = Collecting (CollectingState toCommit [])}, CollectCom)
     | null toCommit -> Just (mempty, state{stateData = Open openState})
     | otherwise -> Nothing
@@ -140,14 +138,6 @@ initEndpoint params = do
  where
   input = Init params
 
-commit ::
-  (AsContractError e, SM.AsSMContractError e) =>
-  Contract () Schema e ()
-commit = do
-  (pk, utxos) <- endpoint @"commit" @(PubKeyHash, [UTXO])
-  logInfo @String "commitEndpoint"
-  void $ SM.runStep client (Commit pk utxos)
-
 data CollectComParams = CollectComParams
   { amount :: Value
   }
@@ -178,7 +168,6 @@ type Schema =
   BlockchainActions
     .\/ Endpoint "setup" ()
     .\/ Endpoint "init" ()
-    .\/ Endpoint "commit" (PubKeyHash, [UTXO])
     .\/ Endpoint "collectCom" CollectComParams
     .\/ Endpoint "close" ()
 
@@ -191,6 +180,5 @@ contract params = forever endpoints
   endpoints =
     setupEndpoint
       `select` initEndpoint params
-      `select` commit
       `select` collectComEndpoint
       `select` closeEndpoint

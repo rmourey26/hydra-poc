@@ -81,6 +81,7 @@ common project-config
 library
   import: project-config
   exposed-modules:
+      Hydra.CommitContract
       Hydra.ContractStateMachine
       Hydra.Contract.Types
       Hydra.MonetaryPolicy
@@ -89,6 +90,7 @@ library
       aeson -any,
       base -any,
       containers -any,
+      lens -any,
       playground-common -any,
       plutus-core -any,
       plutus-tx -any,

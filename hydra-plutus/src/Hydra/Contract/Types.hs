@@ -33,7 +33,6 @@ data CollectingState = CollectingState
 
 data HydraInput
   = Init HeadParameters
-  | Commit PubKeyHash [UTXO]
   | CollectCom
   | Close Xi -- Pi
   deriving (Generic)
