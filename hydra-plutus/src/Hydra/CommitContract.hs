@@ -15,11 +15,13 @@ import Ledger (
   Address,
   PubKeyHash (..),
   TxOut,
+  TxOutTx (..),
   Validator,
   ValidatorCtx,
   Value,
   scriptAddress,
   txId,
+  txOutTxOut,
   unspentOutputsTx,
  )
 import qualified Ledger.Ada as Ada
@@ -107,21 +109,27 @@ commit params = do
 createCommitTx ::
   (AsContractError e) =>
   HeadParameters ->
-  (TxOutRef, TxOut) ->
+  (TxOutRef, TxOutTx) ->
   Contract () Schema e ()
-createCommitTx params (outRef, txOut) = do
-  let ctx =
+createCommitTx params (outRef, txOutTx) = do
+  let inst = contractInstance params
+      ctx =
         Constraints.mustSpendPubKeyOutput outRef
-          <> Constraints.mustPayToTheScript (Committed txOut) (Ada.lovelaceValueOf 1)
-  tx <- submitTxConstraints (contractInstance params) ctx
-  void $ awaitTxConfirmed (txId tx)
+          <> Constraints.mustPayToTheScript (Committed $ txOutTxOut txOutTx) (Ada.lovelaceValueOf 1)
+      lookups =
+        Constraints.scriptInstanceLookups inst
+          <> Constraints.unspentOutputs (Map.fromList [(outRef, txOutTx)])
+
+  utx <- either (throwing _ConstraintResolutionError) pure (Constraints.mkTx lookups ctx)
+  tx <- submitUnbalancedTx utx
+  awaitTxConfirmed (txId tx)
 
 createUTXOToBeLocked ::
   (AsContractError e, AsCommitError e) =>
   HeadParameters ->
   PubKeyHash ->
   Value ->
-  Contract () Schema e (TxOutRef, TxOut)
+  Contract () Schema e (TxOutRef, TxOutTx)
 createUTXOToBeLocked params pk val = do
   logInfo @String ("Committing UTXO with " <> show pk <> ", " <> show val)
   let fundTx = Constraints.mustPayToPubKey pk val
@@ -129,7 +137,7 @@ createUTXOToBeLocked params pk val = do
   awaitTxConfirmed (txId tx)
   let output = Map.toList $ unspentOutputsTx tx
   case output of
-    [_, (outRef, outTxOut)] -> pure (outRef, outTxOut)
+    [_, (outRef, outTxOut)] -> pure (outRef, TxOutTx tx outTxOut)
     _ -> throwing _OutputMissing pk
 
 type Schema =
