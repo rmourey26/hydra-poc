@@ -13,6 +13,7 @@ import Ledger (
   PubKeyHash,
   TxOut,
   datumHash,
+  txOutPubKey,
  )
 import PlutusPrelude (Generic)
 import qualified PlutusTx
@@ -21,21 +22,14 @@ import qualified Prelude
 
 data HydraState
   = Initial
-  | Collecting CollectingState
+  | Collecting
   | Open OpenState
   | Closed
   deriving stock (Prelude.Eq, Show)
 
-data CollectingState = CollectingState
-  { stillNeedToCommit :: [PubKeyHash]
-  , committedUtxos :: [TxOut]
-  }
-  deriving stock (Prelude.Eq, Show)
-
 data HydraInput
   = Init HeadParameters
-  | Commit TxOut
-  | CollectCom
+  | CollectCom [TxOut]
   | Close Xi -- Pi
   deriving (Show, Generic)
 
@@ -99,11 +93,14 @@ data HeadParameters = HeadParameters
   }
   deriving (Prelude.Eq, Show)
 
+isIn :: Foldable t => TxOut -> t PubKeyHash -> Bool
+isIn txout pubkeys =
+  maybe False (`elem` pubkeys) $ txOutPubKey txout
+
 toDatumHash :: PlutusTx.IsData a => a -> DatumHash
 toDatumHash = datumHash . Datum . PlutusTx.toData
 
 PlutusTx.makeLift ''HydraState
-PlutusTx.makeLift ''CollectingState
 PlutusTx.makeLift ''HydraInput
 PlutusTx.makeLift ''OpenState
 PlutusTx.makeLift ''MultisigPublicKey
@@ -118,7 +115,6 @@ PlutusTx.makeLift ''Xi
 PlutusTx.makeLift ''HeadParameters
 
 PlutusTx.unstableMakeIsData ''HydraState
-PlutusTx.unstableMakeIsData ''CollectingState
 PlutusTx.unstableMakeIsData ''HydraInput
 PlutusTx.unstableMakeIsData ''OpenState
 PlutusTx.unstableMakeIsData ''MultisigPublicKey

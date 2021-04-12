@@ -7,6 +7,7 @@
 module Hydra.CommitContract where
 
 import Control.Lens (makeClassyPrisms)
+import Control.Monad (void)
 import Control.Monad.Error.Lens (throwing)
 import qualified Data.Map as Map
 import Hydra.Contract.Types
@@ -21,6 +22,7 @@ import Ledger (
   txId,
   unspentOutputsTx,
  )
+import qualified Ledger.Ada as Ada
 import qualified Ledger.Constraints as Constraints
 import qualified Ledger.Typed.Scripts as Scripts
 import Playground.Contract
@@ -33,18 +35,19 @@ import qualified Prelude
 data Committing = Committing {commitPk :: PubKeyHash, commitValue :: Value}
   deriving (Show, Generic, ToJSON, FromJSON)
 
+data Committed = Committed TxOut
+  deriving (Show, Generic, ToJSON, FromJSON)
+
 PlutusTx.makeLift ''Committing
 PlutusTx.unstableMakeIsData ''Committing
-
-data Committed = Committed {committedUtxos :: [TxOut]}
-  deriving (Show)
 
 PlutusTx.makeLift ''Committed
 PlutusTx.unstableMakeIsData ''Committed
 
 {-# INLINEABLE validate #-}
-validate :: () -> Committed -> ValidatorCtx -> Bool
-validate () _input _ctx = True
+validate :: HeadParameters -> Committed -> () -> ValidatorCtx -> Bool
+validate (HeadParameters pubKeys _) (Committed txOut) () _ =
+  txOut `isIn` pubKeys
 
 --
 -- Boilerplate
@@ -53,24 +56,24 @@ validate () _input _ctx = True
 data Commit
 
 instance Scripts.ScriptType Commit where
-  type DatumType Commit = ()
-  type RedeemerType Commit = Committed
+  type DatumType Commit = Committed
+  type RedeemerType Commit = ()
 
 {- ORMOLU_DISABLE -}
-contractInstance :: Scripts.ScriptInstance Commit
-contractInstance = Scripts.validator @Commit
+contractInstance :: HeadParameters  -> Scripts.ScriptInstance Commit
+contractInstance = Scripts.validatorParam @Commit
     $$(PlutusTx.compile [|| validate ||])
     $$(PlutusTx.compile [|| wrap ||]) where
-        wrap = Scripts.wrapValidator @() @Committed
+        wrap = Scripts.wrapValidator
 {- ORMOLU_ENABLE -}
 
 -- | The validator script of the contract.
-contractValidator :: Validator
-contractValidator = Scripts.validatorScript contractInstance
+contractValidator :: HeadParameters -> Validator
+contractValidator = Scripts.validatorScript . contractInstance
 
 -- | The address of the contract (the hash of its validator script)
-contractAddress :: Address
-contractAddress = Ledger.scriptAddress contractValidator
+contractAddress :: HeadParameters -> Address
+contractAddress = Ledger.scriptAddress . contractValidator
 
 data CommitError
   = OutputMissing PubKeyHash
@@ -89,31 +92,44 @@ instance SM.AsSMContractError CommitError where
   _SMContractError = _CommitSMContractError
 
 commit ::
-  (AsContractError e, SM.AsSMContractError e, AsCommitError e) =>
-  SM.StateMachineClient HydraState HydraInput ->
-  Contract () Schema e ()
-commit client = do
-  Committing pk val <- endpoint @"commit" @Committing
-  txOut <- doCommit pk val
-  logInfo @String ("Committed UTXO: " <> show txOut)
-  tr <- SM.runStep client (Commit txOut)
-  case tr of
-    SM.TransitionSuccess _ -> pure ()
-    SM.TransitionFailure f -> throwing _FailedToCommit (show f)
-
-doCommit ::
   (AsContractError e, AsCommitError e) =>
+  HeadParameters ->
+  Contract () Schema e ()
+commit params = do
+  Committing pk val <- endpoint @"commit" @Committing
+  (outRef, txOut) <- createUTXOToBeLocked params pk val
+  logInfo @String ("Created UTXO: " <> show txOut <> " @ " <> show outRef)
+  -- we must wait some 'time' before creating the actual commit tx, apparently
+  -- otherwise the outRef cannot be found
+  void $ waitNSlots 3
+  createCommitTx params (outRef, txOut)
+
+createCommitTx ::
+  (AsContractError e) =>
+  HeadParameters ->
+  (TxOutRef, TxOut) ->
+  Contract () Schema e ()
+createCommitTx params (outRef, txOut) = do
+  let ctx =
+        Constraints.mustSpendPubKeyOutput outRef
+          <> Constraints.mustPayToTheScript (Committed txOut) (Ada.lovelaceValueOf 1)
+  tx <- submitTxConstraints (contractInstance params) ctx
+  void $ awaitTxConfirmed (txId tx)
+
+createUTXOToBeLocked ::
+  (AsContractError e, AsCommitError e) =>
+  HeadParameters ->
   PubKeyHash ->
   Value ->
-  Contract () Schema e TxOut
-doCommit pk val = do
+  Contract () Schema e (TxOutRef, TxOut)
+createUTXOToBeLocked params pk val = do
   logInfo @String ("Committing UTXO with " <> show pk <> ", " <> show val)
   let fundTx = Constraints.mustPayToPubKey pk val
-  tx <- submitTxConstraints contractInstance fundTx
-  _ <- awaitTxConfirmed (txId tx)
+  tx <- submitTxConstraints (contractInstance params) fundTx
+  awaitTxConfirmed (txId tx)
   let output = Map.toList $ unspentOutputsTx tx
   case output of
-    [_, (_, outTxOut)] -> pure outTxOut
+    [_, (outRef, outTxOut)] -> pure (outRef, outTxOut)
     _ -> throwing _OutputMissing pk
 
 type Schema =
@@ -121,9 +137,8 @@ type Schema =
     .\/ Endpoint "commit" Committing
 
 commitContract ::
-  (AsContractError e, SM.AsSMContractError e, AsCommitError e) =>
-  -- | Contract needs a SM client to be able to wait on the SM making
-  -- progress and reach some state
-  SM.StateMachineClient HydraState HydraInput ->
+  (AsContractError e, AsCommitError e) =>
+  -- | Contract needs is individualised by the specific `HeadParameters` used
+  HeadParameters ->
   Contract () Schema e ()
 commitContract = commit

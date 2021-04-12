@@ -6,10 +6,10 @@ import Hydra.CommitContract as Commit
 import Hydra.ContractStateMachine as SM
 
 import Cardano.Prelude
-import Hydra.Contract.Types (CollectingState (..), HeadParameters (..), HydraInput, HydraState (..), toDatumHash)
+import Hydra.Contract.Types (Eta (..), HeadParameters (..), HydraState (..), MultisigPublicKey (..), OpenState (..), UTXO (..), toDatumHash)
 import Hydra.MonetaryPolicy (hydraCurrencySymbol)
 import Hydra.Utils (datumAtAddress)
-import Ledger (PubKeyHash (..), Tx (..), TxOut, ValidatorCtx, txOutValue)
+import Ledger (PubKeyHash (..), Tx (..), TxOut, txOutValue)
 import qualified Ledger.Ada as Ada
 import Ledger.Constraints.OffChain (UnbalancedTx (..))
 import Ledger.Value (flattenValue)
@@ -17,7 +17,6 @@ import Plutus.Contract hiding (runError)
 import Plutus.Contract.StateMachine (SMContractError)
 import Plutus.Contract.Test
 import qualified Plutus.Trace.Emulator as Trace
-import qualified PlutusTx
 import Test.Tasty
 
 w1 :: Wallet
@@ -33,7 +32,7 @@ theHydraContract :: Contract () SM.Schema SMContractError ()
 theHydraContract = contract headParameters
 
 theCommitContract :: Contract () Commit.Schema CommitError ()
-theCommitContract = commitContract client
+theCommitContract = commitContract headParameters
 
 pubKey1 :: PubKeyHash
 pubKey1 = PubKeyHash "party1pubkeyhash"
@@ -47,11 +46,6 @@ headParameters =
     { verificationKeys = [pubKey1, pubKey2]
     , currencyId = hydraCurrencySymbol 14
     }
-
-{- ORMOLU_DISABLE -}
-compiledScript :: PlutusTx.CompiledCode (HydraState -> HydraInput -> ValidatorCtx -> Bool)
-compiledScript = $$(PlutusTx.compile [|| validatorSM ||])
-{- ORMOLU_ENABLE -}
 
 tests :: TestTree
 tests =
@@ -72,7 +66,7 @@ tests =
             setupInitCollectAndClose
         , checkPredicate
             "Collecting holds all keys after init"
-            (assertNoFailedTransactions .&&. assertState (Collecting $ CollectingState (verificationKeys headParameters) []))
+            (assertNoFailedTransactions .&&. assertState Collecting)
             $ do
               contractHandle <- Trace.activateContractWallet w1 theHydraContract
               Trace.callEndpoint @"setup" contractHandle ()
@@ -80,7 +74,7 @@ tests =
               Trace.callEndpoint @"init" contractHandle ()
         , checkPredicate
             "External 'Commit' transactions from all parties is acknowledged by CollectCom"
-            (assertNoFailedTransactions .&&. assertState (Collecting (CollectingState [] [])))
+            (assertNoFailedTransactions .&&. assertState (Open $ OpenState{keyAggregate = MultisigPublicKey [], eta = Eta UTXO 0 []}))
             $ do
               hydraDriver <- Trace.activateContractWallet w1 theHydraContract
               committer1 <- Trace.activateContractWallet w2 theCommitContract
@@ -94,16 +88,16 @@ tests =
               Trace.callEndpoint @"commit" committer1 (Committing pubKey1 $ Ada.lovelaceValueOf 10)
               void $ Trace.waitNSlots 1
               Trace.callEndpoint @"commit" committer2 (Committing pubKey2 $ Ada.lovelaceValueOf 15)
-              void $ Trace.waitNSlots 1
+              void $ Trace.waitNSlots 10
         ]
     ]
 
 assertState :: HydraState -> TracePredicate
-assertState = datumAtAddress SM.contractAddress . toDatumHash
+assertState = datumAtAddress (SM.contractAddress headParameters) . toDatumHash
 
 assertStateIsClosed :: TracePredicate
 assertStateIsClosed =
-  datumAtAddress SM.contractAddress (toDatumHash Closed)
+  datumAtAddress (SM.contractAddress headParameters) (toDatumHash Closed)
 
 assertInitTxShape :: HeadParameters -> UnbalancedTx -> Bool
 assertInitTxShape HeadParameters{verificationKeys} unbalancedTx =

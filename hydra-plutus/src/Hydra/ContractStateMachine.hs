@@ -7,8 +7,9 @@
 module Hydra.ContractStateMachine where
 
 import Control.Monad (forever, guard, void)
+import qualified Hydra.CommitContract as Commit
 import Hydra.Contract.Types
-import Ledger (Address, Validator, Value, scriptAddress, txOutPubKey)
+import Ledger (Address, TxOut, Validator, scriptAddress, txOutAddress, txOutPubKey, txOutputs)
 import qualified Ledger.Ada as Ada
 import qualified Ledger.Typed.Scripts as Scripts
 import qualified Ledger.Typed.Tx as Tx
@@ -19,34 +20,27 @@ import qualified Plutus.Contract.StateMachine as SM
 import Plutus.Contract.Util (loopM)
 import qualified PlutusTx
 import PlutusTx.Prelude
-import qualified Prelude
 
 {-# INLINEABLE transition #-}
 transition ::
+  HeadParameters ->
   State HydraState ->
   HydraInput ->
   Maybe (SM.TxConstraints Void Void, State HydraState)
-transition s i = case (s, i) of
-  (state@State{stateData = Initial}, Init params) ->
-    Just (mempty, state{stateData = Collecting $ CollectingState (verificationKeys params) []})
-  (state@State{stateData = Collecting (CollectingState toCommit committed)}, Commit utxo)
-    | utxo `isIn` toCommit -> Just (mempty, state{stateData = Collecting (CollectingState (utxo `removeFrom` toCommit) (utxo : committed))})
-    | otherwise -> Nothing
-  (state@State{stateData = Collecting (CollectingState [] _utxos)}, CollectCom) ->
-    -- TODO actually toCommit with given utxos
-    Just (mempty, state{stateData = Open openState})
+transition params s i = case (s, i) of
+  (state@State{stateData = Initial}, Init _params) ->
+    Just (mempty, state{stateData = Collecting})
+  (state@State{stateData = Collecting}, CollectCom utxos) ->
+    -- TODO actually add the utxos to the state ?
+    if length (map txOutPubKey utxos) == length (verificationKeys params)
+      then Just (mempty, state{stateData = Open openState})
+      else Nothing
   (state@State{stateData = Open OpenState{eta, keyAggregate}}, Close xi) ->
     case close keyAggregate eta xi of
       Just{} -> Just (mempty, state{stateData = Closed})
       Nothing -> Nothing
   (_, _) -> Nothing
  where
-  isIn txout pubkeys =
-    maybe False (`elem` pubkeys) $ txOutPubKey txout
-
-  removeFrom txout pubkeys =
-    maybe pubkeys (\pk -> filter (/= pk) pubkeys) $ txOutPubKey txout
-
   openState =
     OpenState{keyAggregate = MultisigPublicKey [], eta = Eta UTXO 0 []}
 
@@ -95,17 +89,17 @@ msAVerify _ _ _ = True -- TODO
 --
 
 {-# INLINEABLE machine #-}
-machine :: SM.StateMachine HydraState HydraInput
-machine = SM.mkStateMachine transition isFinal where isFinal _ = False
+machine :: HeadParameters -> SM.StateMachine HydraState HydraInput
+machine params = SM.mkStateMachine (transition params) isFinal where isFinal _ = False
 
 {-# INLINEABLE validatorSM #-}
-validatorSM :: Scripts.ValidatorType (SM.StateMachine HydraState HydraInput)
-validatorSM = SM.mkValidator machine
+validatorSM :: HeadParameters -> Scripts.ValidatorType (SM.StateMachine HydraState HydraInput)
+validatorSM = SM.mkValidator . machine
 
 {- ORMOLU_DISABLE -}
 contractInstance
-  :: Scripts.ScriptInstance (SM.StateMachine HydraState HydraInput)
-contractInstance = Scripts.validator @(SM.StateMachine HydraState HydraInput)
+  :: HeadParameters -> Scripts.ScriptInstance (SM.StateMachine HydraState HydraInput)
+contractInstance = Scripts.validatorParam @(SM.StateMachine HydraState HydraInput)
     $$(PlutusTx.compile [|| validatorSM ||])
     $$(PlutusTx.compile [|| wrap ||])
     where
@@ -114,26 +108,26 @@ contractInstance = Scripts.validator @(SM.StateMachine HydraState HydraInput)
 
 -- | The 'SM.StateMachineInstance' of the hydra state machine contract. It uses
 -- the functions in 'PlutusTx.StateMachine'.
-machineInstance :: SM.StateMachineInstance HydraState HydraInput
-machineInstance = SM.StateMachineInstance machine contractInstance
+machineInstance :: HeadParameters -> SM.StateMachineInstance HydraState HydraInput
+machineInstance params = SM.StateMachineInstance (machine params) (contractInstance params)
 
-client :: SM.StateMachineClient HydraState HydraInput
-client = SM.mkStateMachineClient machineInstance
+client :: HeadParameters -> SM.StateMachineClient HydraState HydraInput
+client = SM.mkStateMachineClient . machineInstance
 
 -- | The validator script of the contract.
-contractValidator :: Validator
-contractValidator = Scripts.validatorScript contractInstance
+contractValidator :: HeadParameters -> Validator
+contractValidator = Scripts.validatorScript . contractInstance
 
 -- | The address of the contract (the hash of its validator script)
-contractAddress :: Address
-contractAddress = Ledger.scriptAddress contractValidator
+contractAddress :: HeadParameters -> Address
+contractAddress = Ledger.scriptAddress . contractValidator
 
 setupEndpoint ::
-  (AsContractError e, SM.AsSMContractError e) => Contract () Schema e ()
-setupEndpoint = do
+  (AsContractError e, SM.AsSMContractError e) => HeadParameters -> Contract () Schema e ()
+setupEndpoint params = do
   endpoint @"setup" @()
   logInfo @String $ "setupEndpoint"
-  void $ SM.runInitialise client Initial (Ada.lovelaceValueOf 1)
+  void $ SM.runInitialise (client params) Initial (Ada.lovelaceValueOf 1)
 
 currentState ::
   (SM.AsSMContractError e) =>
@@ -154,46 +148,53 @@ initEndpoint ::
 initEndpoint params = do
   endpoint @"init" @()
   logInfo @String $ "initEndpoint"
-  void $ SM.runStep client input
+  void $ SM.runStep (client params) input
  where
   input = Init params
 
-data CollectComParams = CollectComParams
-  { amount :: Value
-  }
-  deriving stock (Prelude.Eq, Prelude.Show, Generic)
-  deriving anyclass (FromJSON, ToJSON, ToSchema, ToArgument)
-
 -- | Our mocked "collectCom" endpoint
 collectComEndpoint ::
-  (AsContractError e, SM.AsSMContractError e) => Contract () Schema e ()
-collectComEndpoint = do
+  (AsContractError e, SM.AsSMContractError e) => HeadParameters -> Contract () Schema e ()
+collectComEndpoint params = do
   endpoint @"collectCom" @()
-  loopM waitAllCommits ()
- where
-  waitAllCommits st = do
-    s <- currentSlot
-    logInfo @String $ "Waiting for change at " <> show contractAddress <> " to happen, current state is " <> show st <> ", slot " <> show s
-    AddressChangeResponse{acrTxns} <- addressChangeRequest AddressChangeRequest{acreqSlot = succ s, acreqAddress = contractAddress}
-    case acrTxns of
-      [] -> pure (Left ()) -- continue waiting
-      _ -> do
-        st' <- currentState client
-        -- TODO Call CollectCom
-        case st' of
-          Just (Collecting (CollectingState [] utxos)) -> do
-            logInfo @String $ "Collected UTXOs " <> show utxos
-            void $ SM.runStep client CollectCom
-            pure (Right ())
-          _ -> pure (Left ())
+  commitOuts <- loopM (waitAllCommits params (length $ verificationKeys params)) []
+  -- consume the commits in a CollectCom
+  void $ SM.runStep (client params) (CollectCom commitOuts)
+
+-- | 'Collect' all commit transactions as they are posted.
+-- We wait for every change request to the nu_com script (eg. the commit contract's script) address,
+-- and collect the corresponding transactions' outputs.
+-- Normally, we should make sure we do this before some timeout happens
+waitAllCommits ::
+  (AsContractError e) =>
+  HeadParameters ->
+  Integer ->
+  [TxOut] ->
+  Contract () Schema e (Either [TxOut] [TxOut])
+waitAllCommits params numParties accUtxos = do
+  s <- currentSlot
+  let addr = Commit.contractAddress params
+  logInfo @String $ "Waiting for change at " <> show addr <> " to happen, current slot is " <> show s
+  AddressChangeResponse{acrTxns} <- addressChangeRequest AddressChangeRequest{acreqSlot = succ s, acreqAddress = addr}
+  case acrTxns of
+    [] -> pure (Left accUtxos) -- continue waiting
+    txns -> do
+      let scrUtxos = filter ((== addr) . txOutAddress) $ concatMap txOutputs txns
+          acc = scrUtxos <> accUtxos
+      logInfo @String $ "Collected UTXOs " <> show acc
+      if length acc == numParties
+        then pure (Right acc)
+        else pure (Left acc)
 
 -- | Our "close" endpoint to trigger a close
 closeEndpoint ::
-  (AsContractError e, SM.AsSMContractError e) => Contract () Schema e ()
-closeEndpoint = do
+  (AsContractError e, SM.AsSMContractError e) =>
+  HeadParameters ->
+  Contract () Schema e ()
+closeEndpoint params = do
   endpoint @"close" @()
   logInfo @String $ "closeEndpoint"
-  void $ SM.runStep client input
+  void $ SM.runStep (client params) input
  where
   input = Close $ Xi UTXO 0 MultiSignature []
 
@@ -211,7 +212,7 @@ contract ::
 contract params = forever endpoints
  where
   endpoints =
-    setupEndpoint
+    setupEndpoint params
       `select` initEndpoint params
-      `select` collectComEndpoint
-      `select` closeEndpoint
+      `select` collectComEndpoint params
+      `select` closeEndpoint params
