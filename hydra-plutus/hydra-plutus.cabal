@@ -88,7 +88,7 @@ library
   hs-source-dirs: src
   build-depends:
       aeson -any,
-      base -any,
+      base >=4.9 && <5,
       containers -any,
       lens -any,
       playground-common -any,
@@ -111,6 +111,7 @@ test-suite hydra-plutus-test
       Hydra.ContractStateMachineSpec
       Hydra.Utils
   build-depends:
+      base >=4.9 && <5,
       cardano-prelude -any,
       containers -any,
       foldl -any,
@@ -123,10 +124,8 @@ test-suite hydra-plutus-test
       plutus-ledger -any,
       plutus-tx-plugin -any,
       prettyprinter -any,
-      streaming,
-      text
-  build-depends:
-      base >=4.9 && <5,
+      streaming -any,
+      text -any,
       tasty -any,
       tasty-golden -any,
       tasty-hunit -any

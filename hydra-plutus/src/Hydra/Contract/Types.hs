@@ -11,6 +11,7 @@ import Ledger (
   Datum (Datum),
   DatumHash,
   PubKeyHash,
+  TxOut,
   datumHash,
  )
 import PlutusPrelude (Generic)
@@ -23,19 +24,20 @@ data HydraState
   | Collecting CollectingState
   | Open OpenState
   | Closed
-  deriving stock (Prelude.Eq)
+  deriving stock (Prelude.Eq, Show)
 
 data CollectingState = CollectingState
   { stillNeedToCommit :: [PubKeyHash]
-  , committedUtxos :: [UTXO]
+  , committedUtxos :: [TxOut]
   }
-  deriving stock (Prelude.Eq)
+  deriving stock (Prelude.Eq, Show)
 
 data HydraInput
   = Init HeadParameters
+  | Commit TxOut
   | CollectCom
   | Close Xi -- Pi
-  deriving (Generic)
+  deriving (Show, Generic)
 
 data OpenState = OpenState
   { keyAggregate :: MultisigPublicKey
@@ -44,10 +46,10 @@ data OpenState = OpenState
   -- numberOfMembers :: Integer,
   -- contestationPeriod :: Integer
   }
-  deriving (Prelude.Eq)
+  deriving (Prelude.Eq, Show)
 
 data MultisigPublicKey = MultisigPublicKey [VerificationKey]
-  deriving (Prelude.Eq, Generic)
+  deriving (Prelude.Eq, Show, Generic)
 
 newtype VerificationKey = VerificationKey
   { unverificationKey :: ByteString
@@ -59,23 +61,25 @@ data Eta = Eta
   , snapshotNumber :: Integer -- s
   , transactions :: [Transaction] -- morally a Set
   }
-  deriving (Prelude.Eq)
+  deriving (Prelude.Eq, Show)
 
 data UTXO = UTXO
-  deriving (Prelude.Eq, Generic, ToJSON, FromJSON)
+  deriving (Prelude.Eq, Show, Generic, ToJSON, FromJSON)
 
 -- | The transaction as handled in the hydra head, i.e. the tx which we have put
 -- into Hydra. According to isomorphism property of Hydra, it could also have
 -- been put on the main chain.
 data Transaction = Transaction
-  deriving (Prelude.Eq)
+  deriving (Prelude.Eq, Show)
 
 data TransactionObject = TransactionObject
   { sigma :: MultiSignature
   , tx :: Transaction
   }
+  deriving (Show)
 
 data MultiSignature = MultiSignature
+  deriving (Show)
 
 data MerkleTreeRoot = MerkleTreeRoot
 
@@ -87,6 +91,7 @@ data Xi = Xi
   , signatures :: MultiSignature
   , confirmedTransactions :: [TransactionObject] -- morally a Set
   }
+  deriving (Show)
 
 data HeadParameters = HeadParameters
   { verificationKeys :: [PubKeyHash]

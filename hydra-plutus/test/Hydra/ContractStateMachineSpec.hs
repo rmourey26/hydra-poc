@@ -24,10 +24,10 @@ w1 :: Wallet
 w1 = Wallet 1
 
 w2 :: Wallet
-w2 = Wallet 20
+w2 = Wallet 2
 
 w3 :: Wallet
-w3 = Wallet 30
+w3 = Wallet 3
 
 theHydraContract :: Contract () SM.Schema SMContractError ()
 theHydraContract = contract headParameters
@@ -76,22 +76,25 @@ tests =
             $ do
               contractHandle <- Trace.activateContractWallet w1 theHydraContract
               Trace.callEndpoint @"setup" contractHandle ()
-              void $ Trace.nextSlot
+              void Trace.nextSlot
               Trace.callEndpoint @"init" contractHandle ()
         , checkPredicate
             "External 'Commit' transactions from all parties is acknowledged by CollectCom"
             (assertNoFailedTransactions .&&. assertState (Collecting (CollectingState [] [])))
             $ do
-              contractHandle <- Trace.activateContractWallet w1 theHydraContract
+              hydraDriver <- Trace.activateContractWallet w1 theHydraContract
               committer1 <- Trace.activateContractWallet w2 theCommitContract
               committer2 <- Trace.activateContractWallet w3 theCommitContract
-              Trace.callEndpoint @"setup" contractHandle ()
-              void $ Trace.nextSlot
-              Trace.callEndpoint @"init" contractHandle ()
-              void $ Trace.nextSlot
+              Trace.callEndpoint @"setup" hydraDriver ()
+              void $ Trace.waitNSlots 1
+              Trace.callEndpoint @"init" hydraDriver ()
+              void $ Trace.waitNSlots 1
+              Trace.callEndpoint @"collectCom" hydraDriver ()
+              void $ Trace.waitNSlots 1
               Trace.callEndpoint @"commit" committer1 (Committing pubKey1 $ Ada.lovelaceValueOf 10)
-              void $ Trace.nextSlot
+              void $ Trace.waitNSlots 1
               Trace.callEndpoint @"commit" committer2 (Committing pubKey2 $ Ada.lovelaceValueOf 15)
+              void $ Trace.waitNSlots 1
         ]
     ]
 
@@ -123,14 +126,14 @@ hasParticipationToken numberOfTokens txOut =
 collectAndClose :: Trace.EmulatorTrace ()
 collectAndClose = do
   callCollectCom
-  void $ Trace.nextSlot
+  void Trace.nextSlot
   callClose
-  void $ Trace.nextSlot
+  void Trace.nextSlot
 
 callCollectCom :: Trace.EmulatorTrace ()
 callCollectCom = do
   contractHandle <- Trace.activateContractWallet w1 theHydraContract
-  Trace.callEndpoint @"collectCom" contractHandle (CollectComParams $ Ada.lovelaceValueOf 42)
+  Trace.callEndpoint @"collectCom" contractHandle ()
 
 callClose :: Trace.EmulatorTrace ()
 callClose = do
@@ -142,10 +145,10 @@ setupInitCollectAndClose = do
   alice <- Trace.activateContractWallet w1 theHydraContract
   --bob <- Trace.activateContractWallet w2 theHydraContract
   Trace.callEndpoint @"setup" alice ()
-  void $ Trace.nextSlot
+  void Trace.nextSlot
   Trace.callEndpoint @"init" alice ()
-  void $ Trace.nextSlot
-  Trace.callEndpoint @"collectCom" alice (CollectComParams $ Ada.lovelaceValueOf 42)
-  void $ Trace.nextSlot
+  void Trace.nextSlot
+  Trace.callEndpoint @"collectCom" alice ()
+  void Trace.nextSlot
   Trace.callEndpoint @"close" alice ()
-  void $ Trace.nextSlot
+  void Trace.nextSlot

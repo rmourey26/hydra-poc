@@ -1,23 +1,25 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
+{-# OPTIONS_GHC -Wno-deferred-type-errors #-}
 {-# OPTIONS_GHC -fno-specialize #-}
 
 module Hydra.ContractStateMachine where
 
 import Control.Monad (forever, guard, void)
-import Ledger (Address, Validator, Value, scriptAddress)
+import Hydra.Contract.Types
+import Ledger (Address, Validator, Value, scriptAddress, txOutPubKey)
 import qualified Ledger.Ada as Ada
 import qualified Ledger.Typed.Scripts as Scripts
+import qualified Ledger.Typed.Tx as Tx
 import Playground.Contract
 import Plutus.Contract
 import Plutus.Contract.StateMachine (State (..), Void)
 import qualified Plutus.Contract.StateMachine as SM
+import Plutus.Contract.Util (loopM)
 import qualified PlutusTx
 import PlutusTx.Prelude
 import qualified Prelude
-
-import Hydra.Contract.Types
 
 {-# INLINEABLE transition #-}
 transition ::
@@ -27,15 +29,24 @@ transition ::
 transition s i = case (s, i) of
   (state@State{stateData = Initial}, Init params) ->
     Just (mempty, state{stateData = Collecting $ CollectingState (verificationKeys params) []})
-  (state@State{stateData = Collecting (CollectingState toCommit [])}, CollectCom)
-    | null toCommit -> Just (mempty, state{stateData = Open openState})
+  (state@State{stateData = Collecting (CollectingState toCommit committed)}, Commit utxo)
+    | utxo `isIn` toCommit -> Just (mempty, state{stateData = Collecting (CollectingState (utxo `removeFrom` toCommit) (utxo : committed))})
     | otherwise -> Nothing
+  (state@State{stateData = Collecting (CollectingState [] _utxos)}, CollectCom) ->
+    -- TODO actually toCommit with given utxos
+    Just (mempty, state{stateData = Open openState})
   (state@State{stateData = Open OpenState{eta, keyAggregate}}, Close xi) ->
     case close keyAggregate eta xi of
       Just{} -> Just (mempty, state{stateData = Closed})
       Nothing -> Nothing
   (_, _) -> Nothing
  where
+  isIn txout pubkeys =
+    maybe False (`elem` pubkeys) $ txOutPubKey txout
+
+  removeFrom txout pubkeys =
+    maybe pubkeys (\pk -> filter (/= pk) pubkeys) $ txOutPubKey txout
+
   openState =
     OpenState{keyAggregate = MultisigPublicKey [], eta = Eta UTXO 0 []}
 
@@ -122,9 +133,18 @@ setupEndpoint ::
 setupEndpoint = do
   endpoint @"setup" @()
   logInfo @String $ "setupEndpoint"
-  void $ SM.runInitialise client initialState (Ada.lovelaceValueOf 1)
- where
-  initialState = Initial
+  void $ SM.runInitialise client Initial (Ada.lovelaceValueOf 1)
+
+currentState ::
+  (SM.AsSMContractError e) =>
+  SM.StateMachineClient HydraState HydraInput ->
+  Contract () Schema e (Maybe HydraState)
+currentState cli =
+  SM.getOnChainState cli >>= \case
+    Just ((Tx.TypedScriptTxOut{Tx.tyTxOutData = s}, _), _) -> do
+      pure (Just s)
+    _ -> do
+      pure Nothing
 
 -- | Our mocked "init" endpoint
 initEndpoint ::
@@ -148,11 +168,24 @@ data CollectComParams = CollectComParams
 collectComEndpoint ::
   (AsContractError e, SM.AsSMContractError e) => Contract () Schema e ()
 collectComEndpoint = do
-  CollectComParams _amt <- endpoint @"collectCom" @CollectComParams
-  logInfo @String $ "collectComEndpoint"
-  void $ SM.runStep client input
+  endpoint @"collectCom" @()
+  loopM waitAllCommits ()
  where
-  input = CollectCom
+  waitAllCommits st = do
+    s <- currentSlot
+    logInfo @String $ "Waiting for change at " <> show contractAddress <> " to happen, current state is " <> show st <> ", slot " <> show s
+    AddressChangeResponse{acrTxns} <- addressChangeRequest AddressChangeRequest{acreqSlot = succ s, acreqAddress = contractAddress}
+    case acrTxns of
+      [] -> pure (Left ()) -- continue waiting
+      _ -> do
+        st' <- currentState client
+        -- TODO Call CollectCom
+        case st' of
+          Just (Collecting (CollectingState [] utxos)) -> do
+            logInfo @String $ "Collected UTXOs " <> show utxos
+            void $ SM.runStep client CollectCom
+            pure (Right ())
+          _ -> pure (Left ())
 
 -- | Our "close" endpoint to trigger a close
 closeEndpoint ::
@@ -168,7 +201,7 @@ type Schema =
   BlockchainActions
     .\/ Endpoint "setup" ()
     .\/ Endpoint "init" ()
-    .\/ Endpoint "collectCom" CollectComParams
+    .\/ Endpoint "collectCom" ()
     .\/ Endpoint "close" ()
 
 contract ::
