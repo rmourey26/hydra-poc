@@ -118,7 +118,7 @@ createCommitTx params (outRef, txOutTx) = do
           <> Constraints.mustPayToTheScript (Committed $ txOutTxOut txOutTx) (Ada.lovelaceValueOf 1)
       lookups =
         Constraints.scriptInstanceLookups inst
-          <> Constraints.unspentOutputs (Map.fromList [(outRef, txOutTx)])
+          Prelude.<> Constraints.unspentOutputs (Map.fromList [(outRef, txOutTx)])
 
   utx <- either (throwing _ConstraintResolutionError) pure (Constraints.mkTx lookups ctx)
   tx <- submitUnbalancedTx utx
