@@ -175,7 +175,7 @@ waitAllCommits params numParties accUtxos = do
   s <- currentSlot
   let addr = Commit.contractAddress params
   logInfo @String $ "Waiting for change at " <> show addr <> " to happen, current slot is " <> show s
-  AddressChangeResponse{acrTxns} <- addressChangeRequest AddressChangeRequest{acreqSlot = succ s, acreqAddress = addr}
+  AddressChangeResponse{acrTxns} <- addressChangeRequest AddressChangeRequest{acreqSlot = s, acreqAddress = addr}
   case acrTxns of
     [] -> pure (Left accUtxos) -- continue waiting
     txns -> do

@@ -7,7 +7,6 @@
 module Hydra.CommitContract where
 
 import Control.Lens (makeClassyPrisms)
-import Control.Monad (void)
 import Control.Monad.Error.Lens (throwing)
 import qualified Data.Map as Map
 import Hydra.Contract.Types
@@ -100,9 +99,6 @@ commit params = do
   Committing pk val <- endpoint @"commit" @Committing
   (outRef, txOut) <- createUTXOToBeLocked params pk val
   logInfo @String ("Created UTXO: " <> show txOut <> " @ " <> show outRef)
-  -- we must wait some 'time' before creating the actual commit tx, apparently
-  -- otherwise the outRef cannot be found
-  void $ waitNSlots 3
   createCommitTx params pk val (outRef, txOut)
 
 createCommitTx ::
