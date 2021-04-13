@@ -65,22 +65,24 @@ tests =
               void Trace.nextSlot
               Trace.callEndpoint @"init" contractHandle ()
         , checkPredicate
-            "External 'Commit' transactions from all parties is acknowledged by CollectCom"
-            (assertNoFailedTransactions .&&. assertState (Open $ OpenState{keyAggregate = MultisigPublicKey [], eta = Eta UTXO 0 []}))
+            "'CollectCom' collects all 'Commit' transactions from all parties and transitions to Open state"
+            ( assertNoFailedTransactions
+                .&&. assertState (Open $ OpenState{keyAggregate = MultisigPublicKey [], eta = Eta UTXO 0 []})
+            )
             $ do
               hydraDriver <- Trace.activateContractWallet w1 theHydraContract
               committer1 <- Trace.activateContractWallet w1 theCommitContract
               committer2 <- Trace.activateContractWallet w2 theCommitContract
               Trace.callEndpoint @"setup" hydraDriver ()
-              void $ Trace.waitNSlots 1
+              void Trace.nextSlot
               Trace.callEndpoint @"init" hydraDriver ()
-              void $ Trace.waitNSlots 1
+              void Trace.nextSlot
               Trace.callEndpoint @"collectCom" hydraDriver ()
-              void $ Trace.waitNSlots 1
+              void Trace.nextSlot
               Trace.callEndpoint @"commit" committer1 (Committing pubKey1 $ Ada.lovelaceValueOf 10)
-              void $ Trace.waitNSlots 1
+              void Trace.nextSlot
               Trace.callEndpoint @"commit" committer2 (Committing pubKey2 $ Ada.lovelaceValueOf 15)
-              void $ Trace.waitNSlots 10
+              void Trace.nextSlot
         ]
     ]
 
