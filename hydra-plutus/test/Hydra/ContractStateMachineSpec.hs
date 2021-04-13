@@ -82,7 +82,7 @@ tests =
               Trace.callEndpoint @"commit" committer1 (Committing pubKey1 $ Ada.lovelaceValueOf 10)
               void Trace.nextSlot
               Trace.callEndpoint @"commit" committer2 (Committing pubKey2 $ Ada.lovelaceValueOf 15)
-              void Trace.nextSlot
+              void $ Trace.waitNSlots 5
         ]
     ]
 
