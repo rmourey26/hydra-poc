@@ -35,9 +35,14 @@ transition params s i = case (s, i) of
   (state@State{stateData = Initial}, Init _params) ->
     Just (mempty, state{stateData = Collecting})
   (state@State{stateData = Collecting}, CollectCom utxos) ->
-    -- TODO actually add the utxos to the state ?
-    if length (map (txOutPubKey . fst) utxos) == length (verificationKeys params) -- TODO should actually check keys are the same as verification keys
-      then Just (mconcat (map (flip Constraints.mustSpendScriptOutput (Redeemer $ PlutusTx.toData ()) . snd) utxos), state{stateData = Open openState})
+    -- TODO should actually check keys are the same as verification keys
+    if length (map (txOutPubKey . fst) utxos) == length (verificationKeys params)
+      then
+        let spendAllCommitTxs = mconcat (map (flip Constraints.mustSpendScriptOutput (Redeemer $ PlutusTx.toData ()) . snd) utxos)
+         in Just
+              ( spendAllCommitTxs
+              , state{stateData = Open openState}
+              )
       else Nothing
   (state@State{stateData = Open OpenState{eta, keyAggregate}}, Close xi) ->
     case close keyAggregate eta xi of
@@ -45,6 +50,7 @@ transition params s i = case (s, i) of
       Nothing -> Nothing
   (_, _) -> Nothing
  where
+  -- TODO actually add the utxos to the state
   openState =
     OpenState{keyAggregate = MultisigPublicKey [], eta = Eta UTXO 0 []}
 
@@ -156,34 +162,58 @@ initEndpoint params = do
  where
   input = Init params
 
--- | Our mocked "collectCom" endpoint
+-- | The `collectCom` endpoint.
+-- This waits for commit transactions to be posted with funds and committed UTXOs
+-- sent to the `commitContract`'s address. Once all transactions have been collected,
+-- we advance the state machine which triggers posting the `collectCom` transaction
+-- that will consume all `commit` transactions and open the Head.
 collectComEndpoint ::
   (AsContractError e, SM.AsSMContractError e) => HeadParameters -> Contract () Schema e ()
 collectComEndpoint params = do
   endpoint @"collectCom" @()
+  -- loop on the `waitAllCommits` contract, until we have collected enough commit
+  -- transactions. This should actually be run alongside a `timeout` contract that
+  -- will close the Head state machine if not all commits have been collected until
+  -- some number of slots have passed, which should be part of the `HeadParameters`.
   commitTxs <- loopM (waitAllCommits params (length $ verificationKeys params)) []
-  -- consume the commits in a CollectCom
+  consumeCommits params commitTxs
+
+consumeCommits ::
+  (AsContractError e, SM.AsSMContractError e) =>
+  HeadParameters ->
+  [Tx] ->
+  Contract () Schema e ()
+consumeCommits params commitTxs = do
+  -- we cannot use `runStep` here because we want to be able to modify the `ScriptLookups`
+  -- which are set in the `StateMachineTransition` and which are needed for the Constraints
+  -- added in the `transition` function to be satisfied.
   stepResult <- SM.mkStep (client params) (CollectCom $ concatMap txOutRefs commitTxs)
   case stepResult of
     Left (SM.InvalidTransition _ _) -> throwing _ContractError "error"
     Right (SM.StateMachineTransition constraints _ _ lookups) -> do
       pk <- ownPubKey
-      let txRefs = zip commitTxs (map txOutRefs commitTxs)
+      let -- this is ugly: We want to build the map from `TxOutRef` to `TxOutTx` which
+          -- is needed to witness the `TxOutRef` constraints, so we need to construct it
+          -- from the detailed transactions `Tx` we have observed.
+          txRefs = zip commitTxs (map txOutRefs commitTxs)
           txOuts = concatMap (\(tx, outs) -> map (\(o, r) -> (r, TxOutTx tx o)) outs) txRefs
           txToConsume = Map.fromList txOuts
           commitValidator = Commit.contractValidator params
           lookups' =
             lookups
+              -- the signing key. Probably redundant?
               Prelude.<> Constraints.ownPubKeyHash (pubKeyHash pk)
+              -- the witnesses for the UTXOs consumed
               Prelude.<> Constraints.unspentOutputs txToConsume
+              -- the script's witness to ensure we can actually consume the UTXOs whose
+              -- address is the @ν_com@ script address
               Prelude.<> Constraints.otherScript commitValidator
       utx <- either (throwing _ConstraintResolutionError) pure (Constraints.mkTx lookups' constraints)
       submitTxConfirmed utx
 
 -- | 'Collect' all commit transactions as they are posted.
--- We wait for every change request to the nu_com script (eg. the commit contract's script) address,
+-- We wait for every change request to the @ν_com@ script (eg. the commit contract's script) address,
 -- and collect the corresponding transaction, checking it has the scripts as its sole output.
--- Normally, we should make sure we do this before some timeout happens
 waitAllCommits ::
   (AsContractError e) =>
   HeadParameters ->
@@ -196,14 +226,17 @@ waitAllCommits params numParties accTxs = do
   logInfo @String $ "Waiting for change at " <> show addr <> " to happen, current slot is " <> show s
   AddressChangeResponse{acrTxns} <- addressChangeRequest AddressChangeRequest{acreqSlot = s, acreqAddress = addr}
   case acrTxns of
-    [] -> pure (Left accTxs) -- continue waiting
+    [] -> pure (Left accTxs) -- keep waiting
     txns -> do
-      let commitTxs = filter ((== 1) . length . txOutRefs) txns
+      let -- In theory, someone could post transactions that send some output to the
+          -- validator script and /then/ do something else, resulting in transactions
+          -- with more than one output which we are not interested in.
+          commitTxs = filter ((== 1) . length . txOutRefs) txns
           acc = commitTxs <> accTxs
       logInfo @String $ "Collected Transactions " <> show (map txId acc)
       if length acc == numParties
-        then pure (Right acc)
-        else pure (Left acc)
+        then pure (Right acc) -- we are done
+        else pure (Left acc) -- keep waiting
 
 -- | Our "close" endpoint to trigger a close
 closeEndpoint ::
