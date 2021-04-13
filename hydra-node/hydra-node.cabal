@@ -78,8 +78,6 @@ library
     , base
     , cardano-prelude
     , containers
-    , hydra-plutus
-    , plutus-ledger
     , ouroboros-network-framework
     , ouroboros-consensus-shelley
     , shelley-spec-ledger

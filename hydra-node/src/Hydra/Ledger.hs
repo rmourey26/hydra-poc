@@ -5,7 +5,6 @@ import Cardano.Prelude
 import Cardano.Ledger.Mary (MaryEra)
 import Ouroboros.Consensus.Shelley.Protocol (StandardCrypto)
 import qualified Shelley.Spec.Ledger.API as Ledger
-import qualified Shelley.Spec.Ledger.BaseTypes as Ledger
 import qualified Shelley.Spec.Ledger.STS.Ledgers as Ledgers
 
 type Era = MaryEra StandardCrypto
@@ -35,8 +34,10 @@ data ValidationError = ValidationError
 
 validateTx :: Ledger.Tx Era -> ValidationResult
 validateTx tx =
-  either (Invalid . toValidationError)
-         (const Valid) $ Ledger.applyTxsTransition globals ledgerEnv (pure tx) ledgerState
+  either
+    (Invalid . toValidationError)
+    (const Valid)
+    $ Ledger.applyTxsTransition globals ledgerEnv (pure tx) ledgerState
  where
   -- toValidationError :: ApplyTxError -> ValidationError
   toValidationError = const ValidationError
