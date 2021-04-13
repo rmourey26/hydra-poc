@@ -21,9 +21,9 @@ flag development
 
 flag defer-plugin-errors
     description:
-        Defer errors from the plugin, useful for things like Haddock that can't handle it.
-    default: False
-    manual: True
+        Defer errors from the plugin, useful for things like Haddock that can't handle it. Also useful for HLS.
+    default: True
+    manual: False
 
 common project-config
   default-extensions:

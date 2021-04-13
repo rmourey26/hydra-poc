@@ -57,10 +57,6 @@ tests =
             )
             $ void (Trace.activateContractWallet w1 theHydraContract)
         , checkPredicate
-            "Closed state after setup > init > collectCom > close"
-            (assertNoFailedTransactions .&&. assertStateIsClosed)
-            setupInitCollectAndClose
-        , checkPredicate
             "Collecting holds all keys after init"
             (assertNoFailedTransactions .&&. assertState Collecting)
             $ do

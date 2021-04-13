@@ -7,10 +7,13 @@
 module Hydra.ContractStateMachine where
 
 import Control.Monad (forever, guard, void)
+import Control.Monad.Error.Lens (throwing)
+import qualified Data.Map as Map
 import qualified Hydra.CommitContract as Commit
 import Hydra.Contract.Types
-import Ledger (Address, TxOut, Validator, scriptAddress, txOutAddress, txOutPubKey, txOutputs)
+import Ledger (Address, Redeemer (..), TxOutTx (..), Validator, pubKeyHash, scriptAddress, txId, txOutPubKey, txOutRefs)
 import qualified Ledger.Ada as Ada
+import qualified Ledger.Constraints as Constraints
 import qualified Ledger.Typed.Scripts as Scripts
 import qualified Ledger.Typed.Tx as Tx
 import Playground.Contract
@@ -20,6 +23,7 @@ import qualified Plutus.Contract.StateMachine as SM
 import Plutus.Contract.Util (loopM)
 import qualified PlutusTx
 import PlutusTx.Prelude
+import qualified Prelude
 
 {-# INLINEABLE transition #-}
 transition ::
@@ -32,8 +36,8 @@ transition params s i = case (s, i) of
     Just (mempty, state{stateData = Collecting})
   (state@State{stateData = Collecting}, CollectCom utxos) ->
     -- TODO actually add the utxos to the state ?
-    if length (map txOutPubKey utxos) == length (verificationKeys params)
-      then Just (mempty, state{stateData = Open openState})
+    if length (map (txOutPubKey . fst) utxos) == length (verificationKeys params) -- TODO should actually check keys are the same as verification keys
+      then Just (mconcat (map (flip Constraints.mustSpendScriptOutput (Redeemer $ PlutusTx.toData ()) . snd) utxos), state{stateData = Open openState})
       else Nothing
   (state@State{stateData = Open OpenState{eta, keyAggregate}}, Close xi) ->
     case close keyAggregate eta xi of
@@ -157,31 +161,46 @@ collectComEndpoint ::
   (AsContractError e, SM.AsSMContractError e) => HeadParameters -> Contract () Schema e ()
 collectComEndpoint params = do
   endpoint @"collectCom" @()
-  commitOuts <- loopM (waitAllCommits params (length $ verificationKeys params)) []
+  commitTxs <- loopM (waitAllCommits params (length $ verificationKeys params)) []
   -- consume the commits in a CollectCom
-  void $ SM.runStep (client params) (CollectCom commitOuts)
+  stepResult <- SM.mkStep (client params) (CollectCom $ concatMap txOutRefs commitTxs)
+  case stepResult of
+    Left (SM.InvalidTransition _ _) -> throwing _ContractError "error"
+    Right (SM.StateMachineTransition constraints _ _ lookups) -> do
+      pk <- ownPubKey
+      let txRefs = zip commitTxs (map txOutRefs commitTxs)
+          txOuts = concatMap (\(tx, outs) -> map (\(o, r) -> (r, TxOutTx tx o)) outs) txRefs
+          txToConsume = Map.fromList txOuts
+          commitValidator = Commit.contractValidator params
+          lookups' =
+            lookups
+              Prelude.<> Constraints.ownPubKeyHash (pubKeyHash pk)
+              Prelude.<> Constraints.unspentOutputs txToConsume
+              Prelude.<> Constraints.otherScript commitValidator
+      utx <- either (throwing _ConstraintResolutionError) pure (Constraints.mkTx lookups' constraints)
+      submitTxConfirmed utx
 
 -- | 'Collect' all commit transactions as they are posted.
 -- We wait for every change request to the nu_com script (eg. the commit contract's script) address,
--- and collect the corresponding transactions' outputs.
+-- and collect the corresponding transaction, checking it has the scripts as its sole output.
 -- Normally, we should make sure we do this before some timeout happens
 waitAllCommits ::
   (AsContractError e) =>
   HeadParameters ->
   Integer ->
-  [TxOut] ->
-  Contract () Schema e (Either [TxOut] [TxOut])
-waitAllCommits params numParties accUtxos = do
+  [Tx] ->
+  Contract () Schema e (Either [Tx] [Tx])
+waitAllCommits params numParties accTxs = do
   s <- currentSlot
   let addr = Commit.contractAddress params
   logInfo @String $ "Waiting for change at " <> show addr <> " to happen, current slot is " <> show s
   AddressChangeResponse{acrTxns} <- addressChangeRequest AddressChangeRequest{acreqSlot = s, acreqAddress = addr}
   case acrTxns of
-    [] -> pure (Left accUtxos) -- continue waiting
+    [] -> pure (Left accTxs) -- continue waiting
     txns -> do
-      let scrUtxos = filter ((== addr) . txOutAddress) $ concatMap txOutputs txns
-          acc = scrUtxos <> accUtxos
-      logInfo @String $ "Collected UTXOs " <> show acc
+      let commitTxs = filter ((== 1) . length . txOutRefs) txns
+          acc = commitTxs <> accTxs
+      logInfo @String $ "Collected Transactions " <> show (map txId acc)
       if length acc == numParties
         then pure (Right acc)
         else pure (Left acc)

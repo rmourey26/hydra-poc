@@ -12,8 +12,8 @@ import Ledger (
   DatumHash,
   PubKeyHash,
   TxOut,
+  TxOutRef,
   datumHash,
-  txOutPubKey,
  )
 import PlutusPrelude (Generic)
 import qualified PlutusTx
@@ -29,7 +29,7 @@ data HydraState
 
 data HydraInput
   = Init HeadParameters
-  | CollectCom [TxOut]
+  | CollectCom [(TxOut, TxOutRef)]
   | Close Xi -- Pi
   deriving (Show, Generic)
 
@@ -92,10 +92,6 @@ data HeadParameters = HeadParameters
   , currencyId :: CurrencySymbol
   }
   deriving (Prelude.Eq, Show)
-
-isIn :: Foldable t => TxOut -> t PubKeyHash -> Bool
-isIn txout pubkeys =
-  maybe False (`elem` pubkeys) $ txOutPubKey txout
 
 toDatumHash :: PlutusTx.IsData a => a -> DatumHash
 toDatumHash = datumHash . Datum . PlutusTx.toData

@@ -11,10 +11,11 @@ import Control.Monad.Error.Lens (throwing)
 import qualified Data.Map as Map
 import Hydra.Contract.Types
 import Ledger (
-  Address,
+  Address (PubKeyAddress),
   PubKeyHash (..),
-  TxOut,
+  TxOut (..),
   TxOutTx (..),
+  TxOutType (PayToPubKey),
   Validator,
   ValidatorCtx,
   Value,
@@ -47,7 +48,17 @@ PlutusTx.unstableMakeIsData ''Committed
 {-# INLINEABLE validate #-}
 validate :: HeadParameters -> Committed -> () -> ValidatorCtx -> Bool
 validate (HeadParameters pubKeys _) (Committed txOut) () _ =
+  -- nothing proves the `txOut` was actually consumed by the transaction, this should be
+  -- verified in the nu_validator function when constructing the commit transction itself
   txOut `isIn` pubKeys
+
+{-# INLINEABLE isIn #-}
+isIn :: TxOut -> [PubKeyHash] -> Bool
+isIn (TxOut (PubKeyAddress p) _ PayToPubKey) pubkeys =
+  case uniqueElement (filter (== p) pubkeys) of
+    Just _ -> True
+    Nothing -> False
+isIn _ _ = False
 
 --
 -- Boilerplate
