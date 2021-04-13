@@ -2,14 +2,13 @@
 
 module Hydra.ContractStateMachineSpec where
 
-import Hydra.CommitContract as Commit
-import Hydra.ContractStateMachine as SM
-
 import Cardano.Prelude
+import Hydra.CommitContract as Commit
 import Hydra.Contract.Types (Eta (..), HeadParameters (..), HydraState (..), MultisigPublicKey (..), OpenState (..), UTXO (..), toDatumHash)
+import Hydra.ContractStateMachine as SM
 import Hydra.MonetaryPolicy (hydraCurrencySymbol)
 import Hydra.Utils (datumAtAddress)
-import Ledger (PubKeyHash (..), Tx (..), TxOut, txOutValue)
+import Ledger (PubKeyHash (..), Tx (..), TxOut, pubKeyHash, txOutValue)
 import qualified Ledger.Ada as Ada
 import Ledger.Constraints.OffChain (UnbalancedTx (..))
 import Ledger.Value (flattenValue)
@@ -25,9 +24,6 @@ w1 = Wallet 1
 w2 :: Wallet
 w2 = Wallet 2
 
-w3 :: Wallet
-w3 = Wallet 3
-
 theHydraContract :: Contract () SM.Schema SMContractError ()
 theHydraContract = contract headParameters
 
@@ -35,10 +31,10 @@ theCommitContract :: Contract () Commit.Schema CommitError ()
 theCommitContract = commitContract headParameters
 
 pubKey1 :: PubKeyHash
-pubKey1 = PubKeyHash "party1pubkeyhash"
+pubKey1 = pubKeyHash $ walletPubKey w1
 
 pubKey2 :: PubKeyHash
-pubKey2 = PubKeyHash "party2pubkeyhash"
+pubKey2 = pubKeyHash $ walletPubKey w2
 
 headParameters :: HeadParameters
 headParameters =
@@ -77,8 +73,8 @@ tests =
             (assertNoFailedTransactions .&&. assertState (Open $ OpenState{keyAggregate = MultisigPublicKey [], eta = Eta UTXO 0 []}))
             $ do
               hydraDriver <- Trace.activateContractWallet w1 theHydraContract
-              committer1 <- Trace.activateContractWallet w2 theCommitContract
-              committer2 <- Trace.activateContractWallet w3 theCommitContract
+              committer1 <- Trace.activateContractWallet w1 theCommitContract
+              committer2 <- Trace.activateContractWallet w2 theCommitContract
               Trace.callEndpoint @"setup" hydraDriver ()
               void $ Trace.waitNSlots 1
               Trace.callEndpoint @"init" hydraDriver ()

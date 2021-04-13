@@ -24,7 +24,6 @@ import Ledger (
   txOutTxOut,
   unspentOutputsTx,
  )
-import qualified Ledger.Ada as Ada
 import qualified Ledger.Constraints as Constraints
 import qualified Ledger.Typed.Scripts as Scripts
 import Playground.Contract
@@ -104,21 +103,24 @@ commit params = do
   -- we must wait some 'time' before creating the actual commit tx, apparently
   -- otherwise the outRef cannot be found
   void $ waitNSlots 3
-  createCommitTx params (outRef, txOut)
+  createCommitTx params pk val (outRef, txOut)
 
 createCommitTx ::
   (AsContractError e) =>
   HeadParameters ->
+  PubKeyHash ->
+  Value ->
   (TxOutRef, TxOutTx) ->
   Contract () Schema e ()
-createCommitTx params (outRef, txOutTx) = do
+createCommitTx params pk val (outRef, txOutTx) = do
   let inst = contractInstance params
       ctx =
         Constraints.mustSpendPubKeyOutput outRef
-          <> Constraints.mustPayToTheScript (Committed $ txOutTxOut txOutTx) (Ada.lovelaceValueOf 1)
+          <> Constraints.mustPayToTheScript (Committed $ txOutTxOut txOutTx) val
       lookups =
         Constraints.scriptInstanceLookups inst
           Prelude.<> Constraints.unspentOutputs (Map.fromList [(outRef, txOutTx)])
+          Prelude.<> Constraints.ownPubKeyHash pk
 
   utx <- either (throwing _ConstraintResolutionError) pure (Constraints.mkTx lookups ctx)
   tx <- submitUnbalancedTx utx
