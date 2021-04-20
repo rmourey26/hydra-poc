@@ -16,11 +16,10 @@ import Control.Concurrent.STM (
 import Control.Exception.Safe (MonadThrow)
 import Hydra.Logic (
   ClientInstruction (..),
-  Effect (ClientEffect, ErrorEffect, NetworkEffect, OnChainEffect, Wait),
+  Effect (ClientEffect, NetworkEffect, OnChainEffect, Wait),
   Event (NetworkEvent, OnChainEvent),
   HeadState (..),
   HydraMessage (AckSn, AckTx, ConfSn, ConfTx, ReqSn, ReqTx),
-  LogicError (InvalidState),
   OnChainTx (..),
  )
 import qualified Hydra.Logic as Logic
@@ -42,13 +41,16 @@ handleNextEvent ::
   m ()
 handleNextEvent EventQueue{nextEvent} HydraNetwork{broadcast} OnChain{postTx} ClientSide{showInstruction} HydraHead{modifyHeadState} = do
   e <- nextEvent
-  out <- modifyHeadState $ \s -> swap $ Logic.update s e
-  forM_ out $ \case
-    ClientEffect i -> showInstruction i
-    NetworkEffect msg -> broadcast msg
-    OnChainEffect tx -> postTx tx
-    Wait _cont -> panic "TODO: wait and reschedule continuation"
-    ErrorEffect ie -> panic $ "TODO: handle this error: " <> show ie
+  mout <- modifyHeadState $ \s -> case Logic.update s e of
+    Nothing -> (Nothing, s)
+    Just (s', eff) -> (Just eff, s')
+  case mout of
+    Nothing -> panic "TODO: not handled event in handleNextEvent"
+    Just out -> forM_ out $ \case
+      ClientEffect i -> showInstruction i
+      NetworkEffect msg -> broadcast msg
+      OnChainEffect tx -> postTx tx
+      Wait _cont -> panic "TODO: wait and reschedule continuation"
 
 init ::
   MonadThrow m =>
@@ -60,7 +62,7 @@ init OnChain{postTx} HydraHead{modifyHeadState} ClientSide{showInstruction} = do
   res <- modifyHeadState $ \s ->
     case s of
       InitState -> (Nothing, OpenState SimpleHead.mkState)
-      _ -> (Just $ InvalidState s, s)
+      _ -> (Just (), s) -- HACK(SN): urgh
   case res of
     Just _ -> showInstruction CommandNotPossible
     Nothing -> do

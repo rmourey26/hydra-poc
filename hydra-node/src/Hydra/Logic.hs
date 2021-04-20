@@ -16,7 +16,6 @@ data Effect
   | -- | Wait effect should be interpreted as a non-blocking interruption which
     -- retries on every state changes until the continuation returns Just{}.
     Wait (HeadState -> Maybe (HeadState, [Effect]))
-  | ErrorEffect LogicError -- NOTE(SN): this feels weird, maybe an Either on the 'update' fits better
 
 data ClientRequest
   = Init
@@ -81,21 +80,16 @@ data SnapshotStrategy = SnapshotStrategy
 createHeadState :: [Party] -> HeadParameters -> SnapshotStrategy -> HeadState
 createHeadState _ _ _ = InitState
 
-data LogicError
-  = InvalidEvent Event HeadState
-  | InvalidState HeadState
-  deriving (Eq, Show)
-
 -- | The heart of the Hydra head logic, a handler of all kinds of 'Event' in the
 -- Hydra head. This may also be split into multiple handlers, i.e. one for hydra
 -- network events, one for client events and one for main chain events, or by
 -- sub-'State'.
-update :: HeadState -> Event -> (HeadState, [Effect])
+update :: HeadState -> Event -> Maybe (HeadState, [Effect])
 update st ev = case (st, ev) of
   (OpenState st', NetworkEvent ReqTx) ->
-    bimap OpenState (map mapEffect)
-      $ SimpleHead.update st' SimpleHead.ReqTxFromPeer
-  _ -> (st, [ErrorEffect $ InvalidEvent ev st])
+    pure . bimap OpenState (map mapEffect) $
+      SimpleHead.update st' SimpleHead.ReqTxFromPeer
+  _ -> Nothing
 
 -- NOTE: This three things needs to be polymorphic in the output eventually, likely a
 -- type-class with data-families for each sub-modules.
