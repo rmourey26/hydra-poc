@@ -29,6 +29,7 @@ data ClientRequest
 data ClientInstruction
   = ReadyToCommit
   | AcceptingTx
+  | CommandNotPossible
   deriving (Eq, Show)
 
 data HydraMessage
@@ -92,8 +93,8 @@ data LogicError
 update :: HeadState -> Event -> (HeadState, [Effect])
 update st ev = case (st, ev) of
   (OpenState st', NetworkEvent ReqTx) ->
-    bimap OpenState (map mapEffect) $
-      SimpleHead.update st' SimpleHead.ReqTxFromPeer
+    bimap OpenState (map mapEffect)
+      $ SimpleHead.update st' SimpleHead.ReqTxFromPeer
   _ -> (st, [ErrorEffect $ InvalidEvent ev st])
 
 -- NOTE: This three things needs to be polymorphic in the output eventually, likely a

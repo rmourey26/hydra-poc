@@ -55,18 +55,17 @@ init ::
   OnChain m ->
   HydraHead m ->
   ClientSide m ->
-  m (Either LogicError ())
+  m ()
 init OnChain{postTx} HydraHead{modifyHeadState} ClientSide{showInstruction} = do
   res <- modifyHeadState $ \s ->
     case s of
       InitState -> (Nothing, OpenState SimpleHead.mkState)
       _ -> (Just $ InvalidState s, s)
   case res of
-    Just e -> pure $ Left e
+    Just _ -> showInstruction CommandNotPossible
     Nothing -> do
       postTx InitTx
       showInstruction AcceptingTx
-      pure $ Right ()
 
 close ::
   MonadThrow m =>
@@ -213,6 +212,7 @@ createClientSideRepl oc hh = do
   prettyInstruction = \case
     ReadyToCommit -> "Head initialized, commit funds to it using 'commit'"
     AcceptingTx -> "Head is open, now feed the hydra with your 'newtx'"
+    CommandNotPossible -> "You dummy .. use a different command."
 
   runRepl = evalRepl (const $ pure prompt) replCommand [] Nothing Nothing (Word0 replComplete) replInit (pure Exit)
 
@@ -227,11 +227,7 @@ createClientSideRepl oc hh = do
   commands = ["init", "commit", "newtx", "close", "contest"]
 
   replCommand c
-    | c == "init" =
-      liftIO $
-        init oc hh cs >>= \case
-          Left e -> putStrLn @Text $ "You dummy.. " <> show e
-          Right _ -> pure ()
+    | c == "init" = liftIO $ init oc hh cs
     | c == "close" = liftIO $ close oc hh
     -- c == "commit" =
     -- c == "newtx" =

@@ -31,9 +31,10 @@ spec = describe "Hydra Node" $ do
     queryHeadState hh `shouldReturn` InitState
   it "does something" $ do
     hh <- createHydraHead InitState
-    res <- init (expectOnChain InitTx) hh (expectClientSide AcceptingTx)
-    res `shouldBe` Right ()
+    init (expectOnChain InitTx) hh (expectClientSide AcceptingTx)
     queryHeadState hh >>= shouldNotBe InitState
+    -- NOTE(SN): this is now an "asynchronous" error
+    init (expectOnChain InitTx) hh (expectClientSide CommandNotPossible)
 
 mockNetwork :: HydraNetwork IO
 mockNetwork =
