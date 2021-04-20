@@ -35,12 +35,16 @@ runHydra ::
   m ()
 runHydra EventQueue{nextEvent} HydraNetwork{broadcast} OnChain{postTx} ClientSide{showInstruction} HydraHead{modifyHeadState} = do
   e <- nextEvent
-  out <- modifyHeadState $ \s -> swap $ Logic.update s e
-  forM_ out $ \case
-    ClientEffect i -> showInstruction i
-    NetworkEffect msg -> broadcast msg
-    OnChainEffect tx -> postTx tx
-    Wait _cont -> panic "TODO: wait and reschedule continuation"
+  mout <- modifyHeadState $ \s -> case Logic.update s e of
+    Nothing -> (Nothing, s)
+    Just (st, out) -> (Just out, st)
+  case mout of
+    Nothing -> showInstruction CommandNotPossible -- NOTE(SN): only if the 'e' was a ClientCommand obviously
+    Just out -> forM_ out $ \case
+      ClientEffect i -> showInstruction i
+      NetworkEffect msg -> broadcast msg
+      OnChainEffect tx -> postTx tx
+      Wait _cont -> panic "TODO: wait and reschedule continuation"
 
 --
 -- Some general event queue from which the Hydra head is "fed"
@@ -170,6 +174,7 @@ createClientSideRepl EventQueue{putEvent} = do
       }
  where
   prettyInstruction = \case
+    CommandNotPossible -> "You dummy.. use a different command."
     ReadyToCommit -> "Head initialized, commit funds to it using 'commit'"
     AcceptingTx -> "Head is open, now feed the hydra with your 'newtx'"
 

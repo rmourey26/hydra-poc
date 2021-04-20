@@ -30,6 +30,7 @@ data ClientCommand
 data ClientInstruction
   = ReadyToCommit
   | AcceptingTx
+  | CommandNotPossible
   deriving (Eq, Show)
 
 data HydraMessage
@@ -85,17 +86,19 @@ createHeadState _ _ _ = InitState
 -- Hydra head. This may also be split into multiple handlers, i.e. one for hydra
 -- network events, one for client events and one for main chain events, or by
 -- sub-'State'.
-update :: HeadState -> Event -> (HeadState, [Effect])
+update :: HeadState -> Event -> Maybe (HeadState, [Effect])
 update st ev = case (st, ev) of
-  (InitState{}, ClientEvent Init) -> init
-  (OpenState st', ClientEvent Close) -> close st'
+  (InitState{}  , ClientEvent Init ) -> pure init
+  (OpenState st', ClientEvent Close) -> pure $ close st'
   (OpenState st', ClientEvent NewTx) ->
-    bimap OpenState (map mapEffect) $
-      SimpleHead.update st' SimpleHead.NewTxFromClient
+    pure . bimap OpenState (map mapEffect) $ SimpleHead.update
+      st'
+      SimpleHead.NewTxFromClient
   (OpenState st', NetworkEvent ReqTx) ->
-    bimap OpenState (map mapEffect) $
-      SimpleHead.update st' SimpleHead.ReqTxFromPeer
-  _ -> error $ "Unhandled event " <> show ev <> " in state " <> show st
+    pure . bimap OpenState (map mapEffect) $ SimpleHead.update
+      st'
+      SimpleHead.ReqTxFromPeer
+  _ -> Nothing
 
 -- | NOTE: This is definitely not directly Open!
 init :: (HeadState, [Effect])
