@@ -9,6 +9,7 @@ import Control.Concurrent.STM (
   newTQueueIO,
   newTVarIO,
   readTQueue,
+  readTVarIO,
   stateTVar,
   writeTQueue,
  )
@@ -23,6 +24,7 @@ import Hydra.Logic (
  )
 import qualified Hydra.Logic as Logic
 import System.Console.Repline (CompleterStyle (Word0), ExitDecision (Exit), evalRepl)
+import Prelude (error)
 
 -- | Monadic interface around 'Hydra.Logic.update'.
 runHydra ::
@@ -33,9 +35,9 @@ runHydra ::
   ClientSide m ->
   HydraHead m ->
   m ()
-runHydra EventQueue{nextEvent} HydraNetwork{broadcast} OnChain{postTx} ClientSide{showInstruction} HydraHead{modifyHeadState} = do
+runHydra EventQueue{nextEvent} HydraNetwork{broadcast} OnChain{postTx} ClientSide{showInstruction} HydraHead{hm} = do
   e <- nextEvent
-  mout <- modifyHeadState $ \s -> case Logic.update s e of
+  mout <- modifyHead hm $ \s -> case Logic.update s e of
     Nothing -> (Nothing, s)
     Just (st, out) -> (Just out, st)
   case mout of
@@ -45,6 +47,9 @@ runHydra EventQueue{nextEvent} HydraNetwork{broadcast} OnChain{postTx} ClientSid
       NetworkEffect msg -> broadcast msg
       OnChainEffect tx -> postTx tx
       Wait _cont -> panic "TODO: wait and reschedule continuation"
+
+whatNext :: HydraHeadQuery m -> m [ClientCommand]
+whatNext = error "TODO: identify possible next commands"
 
 --
 -- Some general event queue from which the Hydra head is "fed"
@@ -73,17 +78,39 @@ createEventQueue = do
 --
 
 -- | Handle to access and modify a Hydra Head's state.
-newtype HydraHead m = HydraHead
-  { modifyHeadState :: forall a. (HeadState -> (a, HeadState)) -> m a
+data HydraHead m = HydraHead
+  { hq :: HydraHeadQuery m -- TODO(SN): maybe use fancy patterns to hide this better
+  , hm :: HydraHeadMod m
+  }
+
+newtype HydraHeadQuery m = HydraHeadQuery
+  { queryHead :: m HeadState
+  }
+
+newtype HydraHeadMod m = HydraHeadMod
+  { modifyHead :: forall a. (HeadState -> (a, HeadState)) -> m a
   }
 
 queryHeadState :: HydraHead m -> m HeadState
-queryHeadState = (`modifyHeadState` \s -> (s, s))
+queryHeadState = queryHead . hq
+
+possibleEvents :: HydraHead m -> m [Event]
+possibleEvents = panic "TODO"
+
+evolveHead :: HydraHead m -> Event -> m (Maybe [Effect])
+evolveHead HydraHead{hm} e =
+  modifyHead hm $ \s -> case Logic.update s e of
+    Nothing -> (Nothing, s)
+    Just (st, out) -> (Just out, st)
 
 createHydraHead :: HeadState -> IO (HydraHead IO)
 createHydraHead initialState = do
   tv <- newTVarIO initialState
-  pure HydraHead{modifyHeadState = atomically . stateTVar tv}
+  pure
+    HydraHead
+      { hq = HydraHeadQuery{queryHead = readTVarIO tv}
+      , hm = HydraHeadMod{modifyHead = atomically . stateTVar tv}
+      }
 
 --
 -- HydraNetwork handle to abstract over network access
@@ -165,8 +192,8 @@ newtype ClientSide m = ClientSide
 --
 -- NOTE(SN): This clashes a bit when other parts of the node do log things, but
 -- spreading \r and >>> all over the place is likely not what we want
-createClientSideRepl :: EventQueue IO -> IO (ClientSide IO)
-createClientSideRepl EventQueue{putEvent} = do
+createClientSideRepl :: HydraHeadQuery IO -> EventQueue IO -> IO (ClientSide IO)
+createClientSideRepl hq EventQueue{putEvent} = do
   link =<< async runRepl
   pure
     ClientSide
@@ -186,11 +213,12 @@ createClientSideRepl EventQueue{putEvent} = do
   commands = ["init", "commit", "newtx", "close", "contest"]
 
   replCommand c
-    | c == "init" = liftIO $ putEvent $ ClientEvent Init
-    | c == "commit" = liftIO $ putEvent $ ClientEvent Commit
-    | c == "newtx" = liftIO $ putEvent $ ClientEvent NewTx
-    | c == "close" = liftIO $ putEvent $ ClientEvent Close
-    | c == "contest" = liftIO $ putEvent $ ClientEvent Contest
+    | c == "init" = liftIO $ putEvent $ ClientEvent Init -- a comamnd
+    | c == "commit" = liftIO $ putEvent $ ClientEvent Commit -- a comamnd
+    | c == "newtx" = liftIO $ putEvent $ ClientEvent NewTx -- a comamnd
+    | c == "close" = liftIO $ putEvent $ ClientEvent Close -- a comamnd
+    | c == "contest" = liftIO $ putEvent $ ClientEvent Contest -- a comamnd
+    | c == "whatnext" = liftIO (print =<< whatNext hq)
     | otherwise = liftIO $ putStrLn @Text $ "Unknown command, use any of: " <> show commands
 
   replComplete n = pure $ filter (n `isPrefixOf`) commands
