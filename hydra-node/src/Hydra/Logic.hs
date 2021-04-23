@@ -9,13 +9,13 @@ import qualified Hydra.Logic.SimpleHead as SimpleHead
 
 data Event tx
   = ClientEvent (ClientRequest tx)
-  | NetworkEvent HydraMessage
+  | NetworkEvent (HydraMessage tx)
   | OnChainEvent OnChainTx
   deriving (Eq, Show)
 
 data Effect tx
   = ClientEffect ClientInstruction
-  | NetworkEffect HydraMessage
+  | NetworkEffect (HydraMessage tx)
   | OnChainEffect OnChainTx
   | -- | Wait effect should be interpreted as a non-blocking interruption which
     -- retries on every state changes until the continuation returns Just{}.
@@ -35,14 +35,16 @@ data ClientInstruction
   | AcceptingTx
   deriving (Eq, Show)
 
-data HydraMessage
-  = ReqTx
+data HydraMessage tx
+  = MsgReqTx (ReqTx tx)
   | AckTx
   | ConfTx
   | ReqSn
   | AckSn
   | ConfSn
   deriving (Eq, Show)
+
+newtype ReqTx tx = ReqTx tx deriving (Eq, Show)
 
 data OnChainTx
   = InitTx
@@ -100,29 +102,4 @@ deriving instance (Show (HeadState tx), Show (Event tx)) => Show (LogicError tx)
 -- sub-'State'.
 update :: Ledger tx -> HeadState tx -> Event tx -> (HeadState tx, Either (LogicError tx) [Effect tx])
 update Ledger{canApply} st ev = case (st, ev) of
-  (OpenState st', ClientEvent (NewTx tx)) ->
-    let ls = SimpleHead.confirmedLedger st'
-     in case canApply ls tx of
-          Valid -> (st, Right [NetworkEffect ReqTx])
-          Invalid err -> (st, Left $ LedgerError err)
-  (OpenState st', NetworkEvent ReqTx) ->
-    bimap OpenState (Right . map mapEffect) $
-      SimpleHead.update st' SimpleHead.ReqTxFromPeer
   _ -> (st, Right [ErrorEffect $ InvalidEvent ev st])
-
--- NOTE: This three things needs to be polymorphic in the output eventually, likely a
--- type-class with data-families for each sub-modules.
-
-mapState :: HeadState tx -> Maybe (SimpleHead.State tx)
-mapState = \case
-  OpenState st' -> Just st'
-  _ -> Nothing
-
-mapEffect :: SimpleHead.Effect tx -> Effect tx
-mapEffect = \case
-  SimpleHead.MulticastReqTx -> NetworkEffect ReqTx
-  SimpleHead.MulticastReqSn -> NetworkEffect ReqSn
-  SimpleHead.MulticastConfTx -> NetworkEffect ConfTx
-  SimpleHead.SendAckTx -> NetworkEffect AckTx
-  SimpleHead.Wait continue ->
-    Wait $ mapState >=> fmap (bimap OpenState (map mapEffect)) . continue

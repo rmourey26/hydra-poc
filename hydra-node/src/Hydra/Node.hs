@@ -19,9 +19,10 @@ import Hydra.Logic (
   Effect (ClientEffect, ErrorEffect, NetworkEffect, OnChainEffect, Wait),
   Event (NetworkEvent, OnChainEvent),
   HeadState (..),
-  HydraMessage (AckSn, AckTx, ConfSn, ConfTx, ReqSn, ReqTx),
+  HydraMessage (AckSn, AckTx, ConfSn, ConfTx, MsgReqTx, ReqSn),
   LogicError (InvalidState),
   OnChainTx (..),
+  ReqTx (ReqTx),
  )
 import qualified Hydra.Logic as Logic
 import qualified Hydra.Logic.SimpleHead as SimpleHead
@@ -36,7 +37,7 @@ handleNextEvent ::
   Show (LedgerState tx) => -- TODO(SN): leaky abstraction of HydraHead
   Show tx =>
   MonadThrow m =>
-  HydraNetwork m ->
+  HydraNetwork tx m ->
   OnChain m ->
   ClientSide m ->
   HydraHead tx m ->
@@ -75,7 +76,7 @@ init OnChain{postTx} HydraHead{modifyHeadState, ledger} ClientSide{showInstructi
  where
   Ledger{initLedgerState} = ledger
 
-newTx :: Monad m => HydraHead tx m -> HydraNetwork m -> tx -> m ValidationResult
+newTx :: Monad m => HydraHead tx m -> HydraNetwork tx m -> tx -> m ValidationResult
 newTx hh@HydraHead{ledger} HydraNetwork{broadcast} tx = do
   mConfirmedLedger <- getConfirmedLedger hh
   case mConfirmedLedger of
@@ -83,11 +84,9 @@ newTx hh@HydraHead{ledger} HydraNetwork{broadcast} tx = do
     Just confirmedLedger ->
       case canApply ledger confirmedLedger tx of
         Valid -> do
-          broadcast ReqTx $> Valid
+          broadcast (MsgReqTx $ ReqTx tx) $> Valid
         invalid ->
           return invalid
-
--- broadcast ReqTx
 
 close ::
   MonadThrow m =>
@@ -101,6 +100,17 @@ close OnChain{postTx} hh = do
 
 data InvalidTransaction = InvalidTransaction
   deriving (Eq, Show)
+
+handleReqTx :: Monad m => HydraHead tx m -> HydraNetwork tx m -> ReqTx tx -> m (Maybe InvalidTransaction)
+handleReqTx hh@HydraHead{ledger} HydraNetwork{broadcast} (ReqTx tx) = do
+  mConfirmedLedger <- getConfirmedLedger hh
+  case mConfirmedLedger of
+    Nothing -> panic "TODO: Not in OpenState"
+    Just confirmedLedger ->
+      -- TODO(SN): distinguish between 'valid-tx' and 'canApply', as well as 'wait' until applicable here
+      case canApply ledger confirmedLedger tx of
+        Valid -> broadcast AckTx $> Nothing
+        _ -> pure $ Just InvalidTransaction
 
 --
 -- Some general event queue from which the Hydra head is "fed"
@@ -157,13 +167,13 @@ createHydraHead initialState ledger = do
 --
 
 -- | Handle to interface with the hydra network and send messages "off chain".
-newtype HydraNetwork m = HydraNetwork
+newtype HydraNetwork tx m = HydraNetwork
   { -- | Send a 'HydraMessage' to the whole hydra network.
-    broadcast :: HydraMessage -> m ()
+    broadcast :: HydraMessage tx -> m ()
   }
 
 -- | Connects to a configured set of peers and sets up the whole network stack.
-createHydraNetwork :: EventQueue IO (Event tx) -> IO (HydraNetwork IO)
+createHydraNetwork :: Show tx => EventQueue IO (Event tx) -> IO (HydraNetwork tx IO)
 createHydraNetwork EventQueue{putEvent} = do
   -- NOTE(SN): obviously we should connect to a known set of peers here and do
   -- really broadcast messages to them
@@ -172,7 +182,7 @@ createHydraNetwork EventQueue{putEvent} = do
   simulatedBroadcast msg = do
     putStrLn @Text $ "[Network] should broadcast " <> show msg
     let ma = case msg of
-          ReqTx -> Just AckTx
+          MsgReqTx _ -> Just AckTx
           AckTx -> Just ConfTx
           ConfTx -> Nothing
           ReqSn -> Just AckSn
@@ -241,7 +251,7 @@ createClientSideRepl ::
   Show tx =>
   OnChain IO ->
   HydraHead tx IO ->
-  HydraNetwork IO ->
+  HydraNetwork tx IO ->
   (FilePath -> IO tx) ->
   IO (ClientSide IO)
 createClientSideRepl oc hh hn loadTx = do

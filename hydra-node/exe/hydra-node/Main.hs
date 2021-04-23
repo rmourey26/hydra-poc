@@ -1,5 +1,5 @@
 import Cardano.Prelude
-import Hydra.Ledger (cardanoLedger, mkLedgerEnv)
+import Hydra.Ledger (cardanoLedger, mkCardanoMaryLedgerEnv)
 import Hydra.Logic (HeadParameters (..), SnapshotStrategy (..), createHeadState)
 import Hydra.Node
 
