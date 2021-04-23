@@ -85,12 +85,14 @@ library
   build-depends:
       async
     , base
-    , cardano-slotting
+    , cardano-ledger-shelley-ma
     , cardano-prelude
+    , cardano-slotting
+    , ouroboros-consensus-shelley
     , ouroboros-network-framework
-    , shelley-spec-ledger
     , repline
     , safe-exceptions
+    , shelley-spec-ledger
     , stm
     , typed-protocols
   ghc-options:

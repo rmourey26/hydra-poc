@@ -3,11 +3,15 @@ module Hydra.Ledger where
 import Cardano.Prelude hiding (undefined)
 import Prelude (undefined)
 
+import Cardano.Ledger.Mary (MaryEra)
 import Cardano.Slotting.EpochInfo (fixedSizeEpochInfo)
+import Cardano.Slotting.Slot (SlotNo (SlotNo))
+import Ouroboros.Consensus.Shelley.Protocol (StandardCrypto)
 import Shelley.Spec.Ledger.API (Globals (..), Network (Testnet))
 import qualified Shelley.Spec.Ledger.API as Ledger
 import Shelley.Spec.Ledger.BaseTypes (UnitInterval, mkActiveSlotCoeff, mkUnitInterval)
-import Shelley.Spec.Ledger.Slot (EpochSize (EpochSize))
+import Shelley.Spec.Ledger.PParams (emptyPParams)
+import Shelley.Spec.Ledger.Slot (EpochSize (EpochSize), SlotNo)
 
 type family LedgerState tx
 
@@ -27,6 +31,15 @@ data ValidationError = ValidationError deriving (Eq, Show)
 --
 -- Cardano ledger
 --
+
+-- | A standard 'MaryEra' ledger environment.
+mkCardanoMaryLedgerEnv :: Ledger.LedgersEnv (MaryEra StandardCrypto)
+mkCardanoMaryLedgerEnv =
+  Ledger.LedgersEnv
+    { Ledger.ledgersSlotNo = SlotNo 1
+    , Ledger.ledgersPp = emptyPParams
+    , Ledger.ledgersAccount = panic "Not implemented"
+    }
 
 type instance LedgerState (Ledger.Tx era) = Ledger.LedgerState era
 
