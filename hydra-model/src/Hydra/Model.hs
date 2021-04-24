@@ -4,6 +4,7 @@
 module Hydra.Model where
 
 import Cardano.Prelude
+import Control.Monad.IOSim (runSim)
 import Hydra.Ledger.MaryTest (MaryTest)
 import qualified Shelley.Spec.Ledger.API as Shelley
 
@@ -53,7 +54,17 @@ data Model = Model {cluster :: Nodes}
 -- | Run a sequence of actions on a new `Model` configured with given `Options`
 -- Returns the `Model` after it's been updated
 runModel :: Options -> [Action] -> Model
-runModel = panic "not implemented"
+runModel opts acts =
+  let model = initialiseModel opts
+   in case runSim (foldM runAction model acts) of
+        Left _ -> panic "Not implemented"
+        Right m -> m
+
+runAction :: Model -> Action -> m Model
+runAction = panic "not implemented"
+
+initialiseModel :: Options -> Model
+initialiseModel = panic "not implemented"
 
 confirmedLedgerUtxos :: Node -> [Utxo]
 confirmedLedgerUtxos = panic "not implemented"

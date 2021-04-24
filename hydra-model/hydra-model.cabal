@@ -79,6 +79,7 @@ library
       containers -any,
       hydra-node -any,
       hydra-sim -any,
+      io-sim -any,
       shelley-spec-ledger -any
 
 test-suite hydra-model-test
