@@ -22,15 +22,16 @@ newtype NodeId = NodeId Natural
 
 -- |All possible requests a client can make to a `Node`
 data Request
-  = -- |Initialises a new head with a list of UTXOs
+  = -- |Initialises a new head
     -- TODO: This is a simplification over the actual Hydra Head's dance of Init/Commit/CollectCom
     -- process.
-    Init [Utxo]
+    -- TODO: The Utxo set is hardcoded in MaryTest module
+    Init
   | -- |Submit a new transaction to the head
     NewTx Transaction
   deriving (Eq, Show)
 
--- |A list of `Node`s that are managed by a given `Model`
+-- |A cluster of Hydra `Node`s that is managed by a given `Model`
 newtype Nodes = Nodes [Node]
 
 -- | An instance of a Hydra node
@@ -47,7 +48,11 @@ data Options = Options {numberOfNodes :: Natural}
 defaultOptions :: Options
 defaultOptions = Options 1
 
-runModel :: Options -> [Action] -> Nodes
+data Model = Model {cluster :: Nodes}
+
+-- | Run a sequence of actions on a new `Model` configured with given `Options`
+-- Returns the `Model` after it's been updated
+runModel :: Options -> [Action] -> Model
 runModel = panic "not implemented"
 
 confirmedLedgerUtxos :: Node -> [Utxo]
