@@ -39,23 +39,13 @@ newtype Nodes = Nodes [Node]
 -- TODO: wrap actually `Hydra.Node.Node`
 data Node = Node
 
--- |A model's options
-data Options = Options {numberOfNodes :: Natural}
-  deriving (Eq, Show)
-
--- | Default model Options
--- Runs with:
--- * 1 node
-defaultOptions :: Options
-defaultOptions = Options 1
-
 data Model = Model {cluster :: Nodes}
 
--- | Run a sequence of actions on a new `Model` configured with given `Options`
+-- | Run a sequence of actions on a new `Model`
 -- Returns the `Model` after it's been updated
-runModel :: Options -> [Action] -> Model
-runModel opts acts =
-  let model = initialiseModel opts
+runModel :: [Action] -> Model
+runModel acts =
+  let model = initialiseModel
    in case runSim (foldM runAction model acts) of
         Left _ -> panic "Not implemented"
         Right m -> m
@@ -63,7 +53,7 @@ runModel opts acts =
 runAction :: Model -> Action -> m Model
 runAction = panic "not implemented"
 
-initialiseModel :: Options -> Model
+initialiseModel :: Model
 initialiseModel = panic "not implemented"
 
 confirmedLedgerUtxos :: Node -> [Utxo]
