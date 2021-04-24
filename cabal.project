@@ -4,6 +4,7 @@ packages:
   local-cluster
   hydra-node
   hydra-plutus
+  hydra-model
 
 tests: False
 package local-cluster
@@ -13,6 +14,9 @@ package hydra-node
   tests: True
 
 package hydra-plutus
+  tests: True
+
+package hydra-model
   tests: True
 
 -- Always show detailed output for tests
@@ -158,4 +162,11 @@ source-repository-package
   type: git
   location: https://github.com/input-output-hk/hedgehog-extras
   tag: 8bcd3c9dc22cc44f9fcfe161f4638a384fc7a187
+  --sha256: 12viwpahjdfvlqpnzdgjp40nw31rvyznnab1hml9afpaxd6ixh70
+
+
+source-repository-package
+  type: git
+  location: /home/curry/hydra-sim
+  tag: 8119e630c73dafc024dc04e7a24c2328fc18e421
   --sha256: 12viwpahjdfvlqpnzdgjp40nw31rvyznnab1hml9afpaxd6ixh70

@@ -1,0 +1,99 @@
+cabal-version: 2.2
+name: hydra-model
+version: 0.1.0.0
+description:        Hydra Model for Testing
+author:             IOHK
+copyright:          2021 IOHK
+license:            Apache-2.0
+license-files:
+  LICENSE
+  NOTICE
+build-type:         Simple
+
+source-repository head
+    type: git
+    location: https://github.com/input-output-hk/hydra-poc
+
+common project-config
+  default-extensions:
+    BangPatterns
+    BinaryLiterals
+    ConstraintKinds
+    DataKinds
+    DefaultSignatures
+    DeriveDataTypeable
+    DeriveFoldable
+    DeriveFunctor
+    DeriveGeneric
+    DeriveTraversable
+    DerivingStrategies
+    EmptyDataDecls
+    ExistentialQuantification
+    FlexibleContexts
+    FlexibleInstances
+    FunctionalDependencies
+    GADTs
+    InstanceSigs
+    KindSignatures
+    LambdaCase
+    MultiParamTypeClasses
+    MultiWayIf
+    NamedFieldPuns
+    NoImplicitPrelude
+    NumericUnderscores
+    OverloadedStrings
+    PartialTypeSignatures
+    PatternGuards
+    RankNTypes
+    ScopedTypeVariables
+    StandaloneDeriving
+    TupleSections
+    TypeApplications
+    TypeFamilies
+    TypeOperators
+    TypeSynonymInstances
+    ViewPatterns
+  ghc-options:
+    -Wall
+    -Wcompat
+    -Widentities
+    -Wincomplete-record-updates
+    -Wincomplete-uni-patterns
+    -Wpartial-fields
+    -Wredundant-constraints
+    -Wnoncanonical-monad-instances
+    -fobject-code -fno-ignore-interface-pragmas -fno-omit-interface-pragmas -fno-strictness
+    -Werror
+
+library
+  import: project-config
+  exposed-modules:
+      Hydra.Model
+  hs-source-dirs: src
+  build-depends:
+      aeson -any,
+      base -any,
+      cardano-prelude -any,
+      containers -any,
+      hydra-sim -any
+
+test-suite hydra-model-test
+  import: project-config
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  hs-source-dirs: test
+  other-modules:
+      Hydra.ModelSpec
+  build-depends:
+      base -any,
+      cardano-prelude -any,
+      containers -any,
+      hspec -any,
+      hspec-core -any,
+      hydra-model -any,
+      QuickCheck -any
+  build-tool-depends:
+    hspec-discover:hspec-discover
+  ghc-options:
+    -threaded
+    -rtsopts
