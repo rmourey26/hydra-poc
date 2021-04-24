@@ -74,9 +74,12 @@ library
       aeson -any,
       base -any,
       cardano-prelude -any,
+      cardano-ledger-shelley-ma,
+      cardano-ledger-shelley-ma-test,
       containers -any,
       hydra-node -any,
-      hydra-sim -any
+      hydra-sim -any,
+      shelley-spec-ledger -any
 
 test-suite hydra-model-test
   import: project-config

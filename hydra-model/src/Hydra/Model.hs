@@ -4,37 +4,38 @@
 module Hydra.Model where
 
 import Cardano.Prelude
-import Hydra.Ledger (Utxo)
+import Hydra.Ledger.MaryTest (MaryTest)
+import qualified Shelley.Spec.Ledger.API as Shelley
+
+-- * Ledger Dependent Types
+
+type Utxo = Shelley.UTxO MaryTest
+type Transaction = Shelley.Tx MaryTest
 
 -- |A single `Action` to run on a specific node
--- `Action` is parameterized by the underlying `tx `type of ledger
-data Action tx = Action {nodeId :: NodeId, request :: Request tx}
-
-deriving instance (Show tx, Show (Utxo tx)) => Show (Action tx)
-deriving instance (Eq tx, Eq (Utxo tx)) => Eq (Action tx)
+data Action = Action {nodeId :: NodeId, request :: Request}
+  deriving (Eq, Show)
 
 -- | An opaque identifier of a node to run a `Request` on
 newtype NodeId = NodeId Natural
   deriving (Eq, Show)
 
 -- |All possible requests a client can make to a `Node`
--- `Request` is parameterized by the underlying `tx `type of ledger
-data Request tx
+data Request
   = -- |Initialises a new head with a list of UTXOs
     -- TODO: This is a simplification over the actual Hydra Head's dance of Init/Commit/CollectCom
     -- process.
-    Init [Utxo tx]
+    Init [Utxo]
   | -- |Submit a new transaction to the head
-    NewTx tx
-
-deriving instance (Show tx, Show (Utxo tx)) => Show (Request tx)
-deriving instance (Eq tx, Eq (Utxo tx)) => Eq (Request tx)
+    NewTx Transaction
+  deriving (Eq, Show)
 
 -- |A list of `Node`s that are managed by a given `Model`
-newtype Nodes tx = Nodes [Node tx]
+newtype Nodes = Nodes [Node]
 
 -- | An instance of a Hydra node
-data Node tx = Node
+-- TODO: wrap actually `Hydra.Node.Node`
+data Node = Node
 
 -- |A model's options
 data Options = Options {numberOfNodes :: Natural}
@@ -46,8 +47,8 @@ data Options = Options {numberOfNodes :: Natural}
 defaultOptions :: Options
 defaultOptions = Options 1
 
-runModel :: Options -> [Action tx] -> Nodes tx
+runModel :: Options -> [Action] -> Nodes
 runModel = panic "not implemented"
 
-confirmedLedgerUtxos :: Node tx -> [Utxo tx]
+confirmedLedgerUtxos :: Node -> [Utxo]
 confirmedLedgerUtxos = panic "not implemented"
