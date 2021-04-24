@@ -11,6 +11,9 @@ import Shelley.Spec.Ledger.Slot (EpochSize (EpochSize))
 
 type family LedgerState tx
 
+-- | The concrete type of UTXOs for a given ledger type
+type family Utxo tx
+
 data Ledger tx = Ledger
   { canApply :: LedgerState tx -> tx -> ValidationResult
   , initLedgerState :: LedgerState tx
@@ -29,6 +32,8 @@ data ValidationError = ValidationError deriving (Eq, Show)
 --
 
 type instance LedgerState (Ledger.Tx era) = Ledger.LedgerState era
+
+type instance Utxo (Ledger.Tx era) = Ledger.UTxO era
 
 cardanoLedger :: Ledger.ApplyTx era => Ledger.LedgersEnv era -> Ledger (Ledger.Tx era)
 cardanoLedger env =
