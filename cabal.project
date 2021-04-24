@@ -167,6 +167,5 @@ source-repository-package
 
 source-repository-package
   type: git
-  location: /home/curry/hydra-sim
+  location: https://github.com/input-output-hk/hydra-sim
   tag: 8119e630c73dafc024dc04e7a24c2328fc18e421
-  --sha256: 12viwpahjdfvlqpnzdgjp40nw31rvyznnab1hml9afpaxd6ixh70
