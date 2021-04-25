@@ -1,11 +1,16 @@
 {-# OPTIONS_GHC -Wno-deferred-type-errors #-}
+{-# OPTIONS_GHC -Wno-deprecations #-}
 
 module Hydra.ModelSpec where
 
 import Cardano.Prelude
-import Hydra.Model (Action, Model (cluster), Nodes (..), confirmedLedgerUtxos, ledger, runModel)
+import Hydra.Ledger.MaryTest (MaryTest)
+import Hydra.Model (Action (..), Model (cluster), ModelState (..), Nodes (..), Request (Init), confirmedLedgerUtxos, ledger, runModel)
+import Test.Cardano.Ledger.Mary ()
 import Test.Hspec (Spec, describe, it)
-import Test.QuickCheck (Arbitrary (..), Property, counterexample, property)
+import Test.QuickCheck (Arbitrary (..), Gen, Property, counterexample, property)
+import Test.Shelley.Spec.Ledger.Generator.EraGen (genUtxo0)
+import Test.Shelley.Spec.Ledger.Generator.Presets (genEnv)
 
 spec :: Spec
 spec = describe "Hydra Nodes Model" $ do
@@ -17,7 +22,13 @@ newtype Actions = Actions {actions :: [Action]}
   deriving (Eq, Show)
 
 instance Arbitrary Actions where
-  arbitrary = pure $ Actions []
+  arbitrary = Actions <$> genActions Closed
+
+genActions :: ModelState -> Gen [Action]
+genActions Closed = do
+  utxos <- genUtxo0 (genEnv @MaryTest Proxy)
+  (Action 1 Init :) <$> genActions (Open utxos)
+genActions (Open _utxos) = undefined
 
 ledgerIsUpdatedWithNewTxs ::
   Actions -> Property

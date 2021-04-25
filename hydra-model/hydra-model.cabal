@@ -100,7 +100,8 @@ test-suite hydra-model-test
       hydra-model -any,
       hydra-node -any,
       QuickCheck -any,
-      shelley-spec-ledger -any
+      shelley-spec-ledger -any,
+      shelley-spec-ledger-test -any
   build-tool-depends:
     hspec-discover:hspec-discover
   ghc-options:
