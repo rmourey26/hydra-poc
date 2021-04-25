@@ -37,11 +37,17 @@ newtype Nodes = Nodes [Node]
   deriving (Eq, Show)
 
 -- | An instance of a Hydra node
--- TODO: wrap actually `Hydra.Node.Node`
+-- TODO: wrap actual `Hydra.Node.Node`
 data Node = Node
   deriving (Eq, Show)
 
-data Model = Model {cluster :: Nodes, ledger :: Utxo}
+-- |The `Model` which "drives" the nodes and maintains expected state.
+data Model = Model
+  { -- |The nodes currently part of this `Model`
+    cluster :: Nodes
+  , -- |The current expected consensus state of the ledger
+    ledger :: Utxo
+  }
   deriving (Eq, Show)
 
 -- | Run a sequence of actions on a new `Model`
