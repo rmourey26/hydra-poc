@@ -3,7 +3,7 @@
 module Hydra.ModelSpec where
 
 import Cardano.Prelude
-import Hydra.Model (Action, Model (cluster), Nodes (..), confirmedLedgerUtxos, runModel)
+import Hydra.Model (Action, Model (cluster), Nodes (..), confirmedLedgerUtxos, ledger, runModel)
 import Test.Hspec (Spec, describe, it)
 import Test.QuickCheck (Arbitrary (..), property)
 
@@ -22,5 +22,7 @@ instance Arbitrary Actions where
 ledgerIsUpdatedWithNewTxs ::
   Actions -> Bool
 ledgerIsUpdatedWithNewTxs Actions{actions} =
-  let Nodes nodes = cluster $ runModel actions
-   in and [confirmedLedgerUtxos n == confirmedLedgerUtxos n' | n <- nodes, n' <- nodes]
+  let model' = runModel actions
+      Nodes nodes = cluster model'
+      expectedUtxos = ledger model'
+   in and [confirmedLedgerUtxos n == expectedUtxos | n <- nodes]

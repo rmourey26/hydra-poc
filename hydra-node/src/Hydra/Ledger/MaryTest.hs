@@ -75,6 +75,9 @@ initUTxO =
       , (TxIn bootstrapTxId 1, TxOut bobAddr (Val.inject bobInitCoin))
       ]
 
+noUTxO :: UTxO MaryTest
+noUTxO = UTxO mempty
+
 -- | Alice's payment key pair
 alicePay :: KeyPair 'Payment TestCrypto
 alicePay = KeyPair vk sk

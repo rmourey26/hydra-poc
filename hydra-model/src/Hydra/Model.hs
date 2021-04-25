@@ -5,7 +5,7 @@ module Hydra.Model where
 
 import Cardano.Prelude
 import Control.Monad.IOSim (runSim)
-import Hydra.Ledger.MaryTest (MaryTest)
+import Hydra.Ledger.MaryTest (MaryTest, initUTxO, noUTxO)
 import qualified Shelley.Spec.Ledger.API as Shelley
 
 -- * Ledger Dependent Types
@@ -34,12 +34,15 @@ data Request
 
 -- |A cluster of Hydra `Node`s that is managed by a given `Model`
 newtype Nodes = Nodes [Node]
+  deriving (Eq, Show)
 
 -- | An instance of a Hydra node
 -- TODO: wrap actually `Hydra.Node.Node`
 data Node = Node
+  deriving (Eq, Show)
 
-data Model = Model {cluster :: Nodes}
+data Model = Model {cluster :: Nodes, ledger :: Utxo}
+  deriving (Eq, Show)
 
 -- | Run a sequence of actions on a new `Model`
 -- Returns the `Model` after it's been updated
@@ -54,7 +57,7 @@ runAction :: Model -> Action -> m Model
 runAction = panic "not implemented"
 
 initialiseModel :: Model
-initialiseModel = panic "not implemented"
+initialiseModel = Model (Nodes [Node, Node]) initUTxO
 
-confirmedLedgerUtxos :: Node -> [Utxo]
-confirmedLedgerUtxos = panic "not implemented"
+confirmedLedgerUtxos :: Node -> Utxo
+confirmedLedgerUtxos _ = noUTxO
