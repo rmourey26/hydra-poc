@@ -52,16 +52,16 @@ spec = describe "Hydra Node business logic" $ do
 
   describe "handleReqTx" $ do
     it "does send ackTx on a valid reqTx transaction" $ do
-      hh <- createHydraHead (HSOpen $ mkOpenState ()) mockLedger
-      handleReqTx hh (expectNetwork AckTx) (ReqTx ValidTx)
-        `shouldReturn` Right (Right ())
-      queryHeadState hh >>= flip shouldSatisfy isOpen
+      (n, queryNetworkMsgs) <- recordNetwork
+      (st, res) <- handleReqTx mockLedger n (ReqTx ValidTx) (mkOpenState ())
+      st `shouldBe` mkOpenState ()
+      res `shouldBe` Nothing
+      queryNetworkMsgs `shouldReturn` [AckTx]
 
     it "does nothing with an invalid reqTx transaction" $ do
-      hh <- createHydraHead (HSOpen $ mkOpenState ()) mockLedger
-      handleReqTx hh mockNetwork (ReqTx InvalidTx)
-        `shouldReturn` Left InvalidTransaction
-      queryHeadState hh >>= flip shouldSatisfy isOpen
+      (st, res) <- handleReqTx mockLedger mockNetwork (ReqTx InvalidTx) (mkOpenState ())
+      st `shouldBe` mkOpenState ()
+      res `shouldBe` Just InvalidTransaction
 
 data MockTx = ValidTx | InvalidTx
   deriving (Eq, Show)
@@ -96,7 +96,6 @@ mockNetwork =
     { broadcast = \x -> shouldNotBeCalled $ "broadcast(" <> show x <> ")"
     }
 
--- TODO(SN): provide a means to check whether it was really broadcast
 expectNetwork :: (Eq tx, Show tx) => HydraMessage tx -> HydraNetwork tx IO
 expectNetwork expected =
   HydraNetwork

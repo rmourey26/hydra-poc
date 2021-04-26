@@ -85,7 +85,13 @@ withOpenState HydraHead{modifyHeadStateM} action =
     s -> pure (s, Left NotInOpenState)
 
 -- NOTE(SN): does not modify OpenState right now, but it could
-newTx :: Monad m => Ledger tx -> HydraNetwork tx m -> tx -> OpenState tx -> m (OpenState tx, ValidationResult)
+newTx ::
+  Monad m =>
+  Ledger tx ->
+  HydraNetwork tx m ->
+  tx ->
+  OpenState tx ->
+  m (OpenState tx, ValidationResult)
 newTx ledger HydraNetwork{broadcast} tx st =
   case canApply ledger (confirmedLedger st) tx of
     Valid -> do
@@ -95,15 +101,19 @@ newTx ledger HydraNetwork{broadcast} tx st =
 data InvalidTransaction = InvalidTransaction
   deriving (Eq, Show)
 
-handleReqTx :: Monad m => HydraHead tx m -> HydraNetwork tx m -> ReqTx tx -> m (Either InvalidTransaction (Either NotInOpenState ()))
-handleReqTx hh@HydraHead{ledger} HydraNetwork{broadcast} (ReqTx tx) = do
-  queryHeadState hh >>= \case
-    HSOpen st -> do
-      -- TODO(SN): distinguish between 'valid-tx' and 'canApply', as well as 'wait' until applicable here
-      case canApply ledger (confirmedLedger st) tx of
-        Valid -> broadcast AckTx $> Right (Right ())
-        _ -> pure $ Left InvalidTransaction
-    _ -> pure $ Right $ Left NotInOpenState
+-- NOTE(SN): does not modify OpenState right now, but it could
+handleReqTx ::
+  Monad m =>
+  Ledger tx ->
+  HydraNetwork tx m ->
+  ReqTx tx ->
+  OpenState tx ->
+  m (OpenState tx, Maybe InvalidTransaction)
+handleReqTx ledger HydraNetwork{broadcast} (ReqTx tx) st = do
+  -- TODO(SN): distinguish between 'valid-tx' and 'canApply', as well as 'wait' until applicable here
+  case canApply ledger (confirmedLedger st) tx of
+    Valid -> broadcast AckTx $> (st, Nothing)
+    _ -> pure (st, Just InvalidTransaction)
 
 close ::
   MonadThrow m =>
