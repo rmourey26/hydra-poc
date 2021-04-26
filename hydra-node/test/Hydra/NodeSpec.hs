@@ -50,16 +50,16 @@ spec = describe "Hydra Node business logic" $ do
       st `shouldBe` mkOpenState ()
       res `shouldBe` Invalid ValidationError
 
-  describe "handleReqTx" $ do
+  describe "onReqTx" $ do
     it "does send ackTx on a valid reqTx transaction" $ do
       (n, queryNetworkMsgs) <- recordNetwork
-      (st, res) <- handleReqTx mockLedger n (ReqTx ValidTx) (mkOpenState ())
+      (st, res) <- onReqTx mockLedger n (ReqTx ValidTx) (mkOpenState ())
       st `shouldBe` mkOpenState ()
       res `shouldBe` Nothing
       queryNetworkMsgs `shouldReturn` [AckTx]
 
     it "does nothing with an invalid reqTx transaction" $ do
-      (st, res) <- handleReqTx mockLedger mockNetwork (ReqTx InvalidTx) (mkOpenState ())
+      (st, res) <- onReqTx mockLedger mockNetwork (ReqTx InvalidTx) (mkOpenState ())
       st `shouldBe` mkOpenState ()
       res `shouldBe` Just InvalidTransaction
 

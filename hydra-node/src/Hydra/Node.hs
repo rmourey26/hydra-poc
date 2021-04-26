@@ -93,6 +93,7 @@ newTx ::
   OpenState tx ->
   m (OpenState tx, ValidationResult)
 newTx ledger HydraNetwork{broadcast} tx st =
+  -- TODO(SN): distinguish between 'valid-tx' and 'canApply' and multiple error results
   case canApply ledger (confirmedLedger st) tx of
     Valid -> do
       broadcast (MsgReqTx $ ReqTx tx) $> (st, Valid)
@@ -102,17 +103,18 @@ data InvalidTransaction = InvalidTransaction
   deriving (Eq, Show)
 
 -- NOTE(SN): does not modify OpenState right now, but it could
-handleReqTx ::
+onReqTx ::
   Monad m =>
   Ledger tx ->
   HydraNetwork tx m ->
   ReqTx tx ->
   OpenState tx ->
   m (OpenState tx, Maybe InvalidTransaction)
-handleReqTx ledger HydraNetwork{broadcast} (ReqTx tx) st = do
+onReqTx ledger HydraNetwork{broadcast} (ReqTx tx) st = do
   -- TODO(SN): distinguish between 'valid-tx' and 'canApply', as well as 'wait' until applicable here
   case canApply ledger (confirmedLedger st) tx of
-    Valid -> broadcast AckTx $> (st, Nothing)
+    Valid -> do
+      broadcast AckTx $> (st, Nothing)
     _ -> pure (st, Just InvalidTransaction)
 
 close ::
@@ -186,10 +188,10 @@ newtype HydraNetwork tx m = HydraNetwork
   }
 
 -- | Connects to a configured set of peers and sets up the whole network stack.
-createHydraNetwork :: Show tx => EventQueue IO (Event tx) -> IO (HydraNetwork tx IO)
-createHydraNetwork EventQueue{putEvent} = do
+createHydraNetwork :: Show tx => (HydraMessage tx -> IO ()) -> IO (HydraNetwork tx IO)
+createHydraNetwork onMsg = do
   -- NOTE(SN): obviously we should connect to a known set of peers here and do
-  -- really broadcast messages to them
+  -- really broadcast messages to them, as well as call onMsg on incoming msgs
   pure HydraNetwork{broadcast = simulatedBroadcast}
  where
   simulatedBroadcast msg = do
@@ -204,7 +206,7 @@ createHydraNetwork EventQueue{putEvent} = do
     case ma of
       Just answer -> do
         putStrLn @Text $ "[Network] simulating answer " <> show answer
-        putEvent $ NetworkEvent answer
+        onMsg answer
       Nothing -> pure ()
 
 --
@@ -224,10 +226,11 @@ newtype OnChain m = OnChain
 
 -- | Connects to a cardano node and sets up things in order to be able to
 -- construct actual transactions using 'OnChainTx' and send them on 'postTx'.
-createChainClient :: EventQueue IO (Event tx) -> IO (OnChain IO)
-createChainClient EventQueue{putEvent} = do
+createChainClient :: (OnChainTx -> IO ()) -> IO (OnChain IO)
+createChainClient onChainTx = do
   -- NOTE(SN): obviously we should construct and send transactions, e.g. using
-  -- plutus instead
+  -- plutus instead, as well as call onChainTx when the according tx is observed
+  -- on chain
   pure OnChain{postTx = simulatedPostTx}
  where
   simulatedPostTx tx = do
@@ -243,7 +246,7 @@ createChainClient EventQueue{putEvent} = do
       Just answer -> void . async $ do
         threadDelay 1000000
         putStrLn @Text $ "[OnChain] simulating  " <> show answer
-        putEvent $ OnChainEvent answer
+        onChainTx answer
       Nothing -> pure ()
 
 --
