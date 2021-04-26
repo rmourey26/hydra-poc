@@ -38,9 +38,10 @@ handleNextEvent ::
   OnChain m ->
   ClientSide m ->
   HydraHead tx m ->
+  Ledger tx ->
   Event tx ->
   m ()
-handleNextEvent hn _oc _cs hh@HydraHead{ledger} = \case
+handleNextEvent hn _oc _cs hh ledger = \case
   NetworkEvent (MsgReqTx reqTx) ->
     fromOpenState hh (toOpenState . onReqTx ledger hn reqTx) >>= \case
       Left NotInOpenState -> panic "received reqTx while not in open state?"
@@ -156,7 +157,9 @@ createEventQueue = do
 -- | Handle to access and modify a Hydra Head's state.
 data HydraHead tx m = HydraHead
   { modifyHeadStateM :: forall a. Applicative m => (HeadState tx -> m (HeadState tx, a)) -> m a
-  , ledger :: Ledger tx
+  , -- | Wait for a condition on the 'HeadState' to become 'True' and invoke the
+    -- given continuation with the 'HeadState' which passed the predicate.
+    wait :: forall a. (HeadState tx -> Bool) -> (HeadState tx -> m a) -> m a
   }
 
 modifyHeadState :: Applicative m => HydraHead tx m -> (HeadState tx -> (HeadState tx, a)) -> m a
@@ -168,13 +171,12 @@ queryHeadState = (`modifyHeadState` \s -> (s, s))
 putState :: Applicative m => HydraHead tx m -> HeadState tx -> m ()
 putState hh new = modifyHeadState hh $ const (new, ())
 
-createHydraHead :: HeadState tx -> Ledger tx -> IO (HydraHead tx IO)
-createHydraHead initialState ledger = do
+createHydraHead :: HeadState tx -> IO (HydraHead tx IO)
+createHydraHead initialState = do
   mv <- newMVar initialState
   pure
     HydraHead
       { modifyHeadStateM = modifyMVar mv
-      , ledger -- TODO(SN): remove this from the 'HydraHead'
       }
 
 --
@@ -266,9 +268,10 @@ createClientSideRepl ::
   OnChain IO ->
   HydraHead tx IO ->
   HydraNetwork tx IO ->
+  Ledger tx ->
   (FilePath -> IO tx) ->
   IO (ClientSide IO)
-createClientSideRepl oc hh@HydraHead{ledger} hn loadTx = do
+createClientSideRepl oc hh hn ledger loadTx = do
   link =<< async runRepl
   pure cs
  where
