@@ -14,7 +14,7 @@ import Shelley.Spec.Ledger.API (Coin (..), DPState (..), LedgerState (..), UTxOS
 -- work propertly.
 import Shelley.Spec.Ledger.PParams (PParams' (..))
 import Test.Cardano.Ledger.Mary ()
-import Test.Hspec (Spec, describe, it)
+import Test.Hspec (Spec, describe, xit)
 import Test.QuickCheck (Arbitrary (..), Gen, Property, choose, counterexample, elements, property)
 import Test.Shelley.Spec.Ledger.Generator.EraGen (genUtxo0)
 import Test.Shelley.Spec.Ledger.Generator.Presets (genEnv)
@@ -22,8 +22,7 @@ import Test.Shelley.Spec.Ledger.Generator.Utxo (genTx)
 
 spec :: Spec
 spec = describe "Hydra Nodes Model" $ do
-  it "checks behavior of a 2 nodes cluster" $
-    property ledgerIsUpdatedWithNewTxs
+  xit "checks behavior of a 2 nodes cluster" $ property ledgerIsUpdatedWithNewTxs
 
 -- |A sequence of `Action` to run.
 newtype Actions = Actions {actions :: [Action]}
