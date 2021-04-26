@@ -78,7 +78,6 @@ library
     Hydra.Node
     Hydra.Ledger
     Hydra.Logic
-    Hydra.Logic.SimpleHead
     Network.TypedProtocol.FireForget.Type
     Network.TypedProtocol.FireForget.Client
     Network.TypedProtocol.FireForget.Server

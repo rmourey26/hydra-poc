@@ -15,18 +15,15 @@ import Hydra.Ledger
 import Hydra.Logic (
   ClientInstruction (..),
   ClosedState (..),
-  Effect (ClientEffect, ErrorEffect, NetworkEffect, OnChainEffect, Wait),
-  Event (NetworkEvent, OnChainEvent),
+  Event (NetworkEvent),
   HeadState (..),
   HydraMessage (AckSn, AckTx, ConfSn, ConfTx, MsgReqTx, ReqSn),
   InitState,
-  LogicError,
   OnChainTx (..),
   OpenState (confirmedLedger),
   ReqTx (ReqTx),
   mkOpenState,
  )
-import qualified Hydra.Logic as Logic
 import System.Console.Repline (CompleterStyle (Word0), ExitDecision (Exit), evalRepl)
 
 --
@@ -35,7 +32,6 @@ import System.Console.Repline (CompleterStyle (Word0), ExitDecision (Exit), eval
 
 -- | Monadic interface around 'Hydra.Logic.update'.
 handleNextEvent ::
-  Show (LedgerState tx) => -- TODO(SN): leaky abstraction of HydraHead
   Show tx =>
   MonadThrow m =>
   HydraNetwork tx m ->
@@ -43,19 +39,14 @@ handleNextEvent ::
   ClientSide m ->
   HydraHead tx m ->
   Event tx ->
-  m (Maybe (LogicError tx))
-handleNextEvent HydraNetwork{broadcast} OnChain{postTx} ClientSide{showInstruction} hh@HydraHead{ledger} e = do
-  result <- modifyHeadState hh $ \s -> Logic.update ledger s e
-  case result of
-    Left err -> pure $ Just err
-    Right out -> do
-      forM_ out $ \case
-        ClientEffect i -> showInstruction i
-        NetworkEffect msg -> broadcast msg
-        OnChainEffect tx -> postTx tx
-        Wait _cont -> panic "TODO: wait and reschedule continuation"
-        ErrorEffect ie -> panic $ "TODO: handle this error: " <> show ie
-      pure Nothing
+  m ()
+handleNextEvent hn _oc _cs hh@HydraHead{ledger} = \case
+  NetworkEvent (MsgReqTx reqTx) ->
+    fromOpenState hh (toOpenState . onReqTx ledger hn reqTx) >>= \case
+      Left NotInOpenState -> panic "received reqTx while not in open state?"
+      Right (Just InvalidTransaction) -> panic "how are invalid txs handled? simply log?"
+      Right Nothing -> pure ()
+  e -> panic $ "unhandled event: " <> show e
 
 data NotInInitState = NotInInitState deriving (Eq, Show)
 
@@ -79,17 +70,20 @@ init OnChain{postTx} Ledger{initLedgerState} ClientSide{showInstruction} _st = d
 
 data NotInOpenState = NotInOpenState deriving (Eq, Show)
 
-withOpenState :: Applicative m => HydraHead tx m -> (OpenState tx -> m (HeadState tx, a)) -> m (Either NotInOpenState a)
-withOpenState HydraHead{modifyHeadStateM} action =
+fromOpenState :: Applicative m => HydraHead tx m -> (OpenState tx -> m (HeadState tx, a)) -> m (Either NotInOpenState a)
+fromOpenState HydraHead{modifyHeadStateM} action =
   modifyHeadStateM $ \case
     HSOpen is -> second Right <$> action is
     s -> pure (s, Left NotInOpenState)
 
-withOpenState_ :: Applicative m => HydraHead tx m -> (OpenState tx -> m (HeadState tx)) -> m (Maybe NotInOpenState)
-withOpenState_ HydraHead{modifyHeadStateM} action =
+fromOpenState_ :: Applicative m => HydraHead tx m -> (OpenState tx -> m (HeadState tx)) -> m (Maybe NotInOpenState)
+fromOpenState_ HydraHead{modifyHeadStateM} action =
   modifyHeadStateM $ \case
     HSOpen is -> (,Nothing) <$> action is
     s -> pure (s, Just NotInOpenState)
+
+toOpenState :: Functor m => m (OpenState tx, a) -> m (HeadState tx, a)
+toOpenState = fmap (first HSOpen)
 
 -- NOTE(SN): does not modify OpenState right now, but it could
 newTx ::
@@ -302,13 +296,13 @@ createClientSideRepl oc hh@HydraHead{ledger} hn loadTx = do
           Nothing -> pure ()
     | c == "close" =
       liftIO $
-        withOpenState_ hh (fmap HSClosed . close oc) >>= \case
+        fromOpenState_ hh (fmap HSClosed . close oc) >>= \case
           Just NotInOpenState -> putText "You dummy.. can't close now"
           Nothing -> pure ()
     -- c == "commit" =
     | c == "newtx" = liftIO $ do
       tx <- loadTx "hardcoded/file/path"
-      withOpenState hh (fmap (first HSOpen) . newTx ledger hn tx) >>= \case
+      fromOpenState hh (toOpenState . newTx ledger hn tx) >>= \case
         Left _ -> putText "You dummy, not accepting txs now"
         Right (Invalid _) -> putText "Transaction invalid, not going to accept it"
         Right Valid -> putText "Tx accepted, do you have more?"

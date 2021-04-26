@@ -3,24 +3,13 @@
 module Hydra.Logic where
 
 import Cardano.Prelude
-
-import Hydra.Ledger (Ledger (Ledger, canApply), LedgerState, ValidationError, ValidationResult (Invalid, Valid))
-import qualified Hydra.Logic.SimpleHead as SimpleHead
+import Hydra.Ledger (LedgerState)
 
 data Event tx
   = ClientEvent (ClientRequest tx)
   | NetworkEvent (HydraMessage tx)
   | OnChainEvent OnChainTx
   deriving (Eq, Show)
-
-data Effect tx
-  = ClientEffect ClientInstruction
-  | NetworkEffect (HydraMessage tx)
-  | OnChainEffect OnChainTx
-  | -- | Wait effect should be interpreted as a non-blocking interruption which
-    -- retries on every state changes until the continuation returns Just{}.
-    Wait (HeadState tx -> Maybe (HeadState tx, [Effect tx]))
-  | ErrorEffect (LogicError tx) -- NOTE(SN): this feels weird, maybe an Either on the 'update' fits better
 
 data ClientRequest tx
   = Init
@@ -106,19 +95,3 @@ data SnapshotStrategy = SnapshotStrategy
 -- to be exchanged somehow, eventually.
 createHeadState :: [Party] -> HeadParameters -> SnapshotStrategy -> HeadState tx
 createHeadState _ _ _ = HSInit InitState
-
-data LogicError tx
-  = InvalidEvent (Event tx) (HeadState tx)
-  | InvalidState (HeadState tx)
-  | LedgerError ValidationError
-
-deriving instance (Eq (HeadState tx), Eq (Event tx)) => Eq (LogicError tx)
-deriving instance (Show (HeadState tx), Show (Event tx)) => Show (LogicError tx)
-
--- | The heart of the Hydra head logic, a handler of all kinds of 'Event' in the
--- Hydra head. This may also be split into multiple handlers, i.e. one for hydra
--- network events, one for client events and one for main chain events, or by
--- sub-'State'.
-update :: Ledger tx -> HeadState tx -> Event tx -> (HeadState tx, Either (LogicError tx) [Effect tx])
-update Ledger{canApply} st ev = case (st, ev) of
-  _ -> (st, Right [ErrorEffect $ InvalidEvent ev st])
