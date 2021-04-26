@@ -39,10 +39,10 @@ import Test.Cardano.Ledger.EraBuffet (TestCrypto)
 spec :: Spec
 spec = describe "Hydra Ledger (Mary)" $ do
   it "should reject invalid transactions" $ do
-    validateTx mkLedgerEnv mkLedgerState txInvalid `shouldBe` Invalid ValidationError
+    validateTx mkLedgersEnv mkLedgerState txInvalid `shouldBe` Invalid ValidationError
 
   it "should validate transactions which simply transfer value" $ do
-    validateTx mkLedgerEnv mkLedgerState txSimpleTransfer `shouldBe` Valid
+    validateTx mkLedgersEnv mkLedgerState txSimpleTransfer `shouldBe` Valid
 
 -- | Some invalid tx (unbalanced and no witnesses).
 txInvalid :: Ledger.Tx MaryTest

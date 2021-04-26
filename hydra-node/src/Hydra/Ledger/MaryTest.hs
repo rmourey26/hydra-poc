@@ -24,8 +24,8 @@ import Shelley.Spec.Ledger.UTxO (UTxO (..), txid)
 import Test.Cardano.Ledger.EraBuffet (MaryEra, TestCrypto)
 import Test.Shelley.Spec.Ledger.Utils (mkAddr, mkKeyPair)
 
-mkLedgerEnv :: Ledgers.LedgersEnv MaryTest
-mkLedgerEnv =
+mkLedgersEnv :: Ledgers.LedgersEnv MaryTest
+mkLedgersEnv =
   Ledgers.LedgersEnv
     { Ledgers.ledgersSlotNo = SlotNo 1
     , Ledgers.ledgersPp = emptyPParams
