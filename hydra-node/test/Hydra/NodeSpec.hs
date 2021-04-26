@@ -31,24 +31,24 @@ import Test.Hspec (
  )
 
 spec :: Spec
-spec = describe "Hydra Node" $ do
-  it "does something" $ do
-    init (expectOnChain InitTx) mockLedger (expectClientSide AcceptingTx) InitState
-      `shouldReturn` mkOpenState ()
+spec = describe "Hydra Node business logic" $ do
+  describe "init" $ do
+    it "does transition to open state" $ do
+      init (expectOnChain InitTx) mockLedger (expectClientSide AcceptingTx) InitState
+        `shouldReturn` mkOpenState ()
 
-  it "does send transactions received from client onto the network" $ do
-    hh <- createHydraHead (HSOpen $ mkOpenState ()) mockLedger
-    (n, queryNetworkMsgs) <- recordNetwork
-    newTx hh n ValidTx
-      `shouldReturn` Right Valid
-    queryHeadState hh >>= flip shouldSatisfy isOpen
-    queryNetworkMsgs `shouldReturn` [MsgReqTx $ ReqTx ValidTx]
+  describe "newTx" $ do
+    it "does send transactions received from client onto the network" $ do
+      (n, queryNetworkMsgs) <- recordNetwork
+      (st, res) <- newTx mockLedger n ValidTx (mkOpenState ())
+      st `shouldBe` mkOpenState ()
+      res `shouldBe` Valid
+      queryNetworkMsgs `shouldReturn` [MsgReqTx $ ReqTx ValidTx]
 
-  it "does not forward invalid transactions received from client" $ do
-    hh <- createHydraHead (HSOpen $ mkOpenState ()) mockLedger
-    newTx hh mockNetwork InvalidTx
-      `shouldReturn` Right (Invalid ValidationError)
-    queryHeadState hh >>= flip shouldSatisfy isOpen
+    it "does not forward invalid transactions received from client" $ do
+      (st, res) <- newTx mockLedger mockNetwork InvalidTx (mkOpenState ())
+      st `shouldBe` mkOpenState ()
+      res `shouldBe` Invalid ValidationError
 
   describe "handleReqTx" $ do
     it "does send ackTx on a valid reqTx transaction" $ do

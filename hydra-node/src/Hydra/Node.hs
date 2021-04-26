@@ -7,9 +7,7 @@ module Hydra.Node where
 import Cardano.Prelude
 import Control.Concurrent.STM (
   newTQueueIO,
-  newTVarIO,
   readTQueue,
-  stateTVar,
   writeTQueue,
  )
 import Control.Exception.Safe (MonadThrow)
@@ -28,7 +26,6 @@ import Hydra.Logic (
   mkOpenState,
  )
 import qualified Hydra.Logic as Logic
-import qualified Hydra.Logic.SimpleHead as SimpleHead
 import System.Console.Repline (CompleterStyle (Word0), ExitDecision (Exit), evalRepl)
 
 --
@@ -81,15 +78,19 @@ init OnChain{postTx} Ledger{initLedgerState} ClientSide{showInstruction} _st = d
 
 data NotInOpenState = NotInOpenState deriving (Eq, Show)
 
-newTx :: Monad m => HydraHead tx m -> HydraNetwork tx m -> tx -> m (Either NotInOpenState ValidationResult)
-newTx hh@HydraHead{ledger} HydraNetwork{broadcast} tx = do
-  queryHeadState hh >>= \case
-    HSOpen st -> do
-      case canApply ledger (confirmedLedger st) tx of
-        Valid -> do
-          broadcast (MsgReqTx $ ReqTx tx) $> Right Valid
-        invalid -> pure $ Right invalid
-    _ -> pure $ Left NotInOpenState
+withOpenState :: Applicative m => HydraHead tx m -> (OpenState tx -> m (HeadState tx, a)) -> m (Either NotInOpenState a)
+withOpenState HydraHead{modifyHeadStateM} action =
+  modifyHeadStateM $ \case
+    HSOpen is -> second Right <$> action is
+    s -> pure (s, Left NotInOpenState)
+
+-- NOTE(SN): does not modify OpenState right now, but it could
+newTx :: Monad m => Ledger tx -> HydraNetwork tx m -> tx -> OpenState tx -> m (OpenState tx, ValidationResult)
+newTx ledger HydraNetwork{broadcast} tx st =
+  case canApply ledger (confirmedLedger st) tx of
+    Valid -> do
+      broadcast (MsgReqTx $ ReqTx tx) $> (st, Valid)
+    invalid -> pure (st, invalid)
 
 data InvalidTransaction = InvalidTransaction
   deriving (Eq, Show)
@@ -282,7 +283,13 @@ createClientSideRepl oc hh@HydraHead{ledger} hn loadTx = do
           Nothing -> pure ()
     | c == "close" = liftIO $ close oc hh
     -- c == "commit" =
-    | c == "newtx" = liftIO $ loadTx "hardcoded/file/path" >>= void . newTx hh hn
+    | c == "newtx" = liftIO $ do
+      tx <- loadTx "hardcoded/file/path"
+      withOpenState hh (fmap (first HSOpen) . newTx ledger hn tx) >>= \case
+        Left _ -> putText "You dummy, not accepting txs now"
+        Right (Invalid _) -> putText "Transaction invalid, not going to accept it"
+        Right Valid -> putText "Tx accepted, do you have more?"
+
     -- c == "contest" =
     | otherwise = liftIO $ putStrLn @Text $ "Unknown command, use any of: " <> show commands
 
