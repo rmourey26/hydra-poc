@@ -14,6 +14,7 @@ import Control.Exception.Safe (MonadThrow)
 import Hydra.Ledger
 import Hydra.Logic (
   ClientInstruction (..),
+  ClosedState (..),
   Effect (ClientEffect, ErrorEffect, NetworkEffect, OnChainEffect, Wait),
   Event (NetworkEvent, OnChainEvent),
   HeadState (..),
@@ -58,8 +59,8 @@ handleNextEvent HydraNetwork{broadcast} OnChain{postTx} ClientSide{showInstructi
 
 data NotInInitState = NotInInitState deriving (Eq, Show)
 
-withInitState :: Applicative m => HydraHead tx m -> (InitState -> m (HeadState tx)) -> m (Maybe NotInInitState)
-withInitState HydraHead{modifyHeadStateM} action =
+withInitState_ :: Applicative m => HydraHead tx m -> (InitState -> m (HeadState tx)) -> m (Maybe NotInInitState)
+withInitState_ HydraHead{modifyHeadStateM} action =
   modifyHeadStateM $ \case
     HSInit is -> (,Nothing) <$> action is
     s -> pure (s, Just NotInInitState)
@@ -83,6 +84,12 @@ withOpenState HydraHead{modifyHeadStateM} action =
   modifyHeadStateM $ \case
     HSOpen is -> second Right <$> action is
     s -> pure (s, Left NotInOpenState)
+
+withOpenState_ :: Applicative m => HydraHead tx m -> (OpenState tx -> m (HeadState tx)) -> m (Maybe NotInOpenState)
+withOpenState_ HydraHead{modifyHeadStateM} action =
+  modifyHeadStateM $ \case
+    HSOpen is -> (,Nothing) <$> action is
+    s -> pure (s, Just NotInOpenState)
 
 -- NOTE(SN): does not modify OpenState right now, but it could
 newTx ::
@@ -120,12 +127,11 @@ onReqTx ledger HydraNetwork{broadcast} (ReqTx tx) st = do
 close ::
   MonadThrow m =>
   OnChain m ->
-  HydraHead tx m ->
-  m ()
-close OnChain{postTx} hh = do
-  -- TODO(SN): check that we are in open state
-  putState hh ClosedState
+  OpenState tx ->
+  m ClosedState
+close OnChain{postTx} _os = do
   postTx CloseTx
+  pure ClosedState
 
 --
 -- Some general event queue from which the Hydra head is "fed"
@@ -291,10 +297,14 @@ createClientSideRepl oc hh@HydraHead{ledger} hn loadTx = do
   replCommand c
     | c == "init" =
       liftIO $
-        withInitState hh (fmap HSOpen . init oc ledger cs) >>= \case
+        withInitState_ hh (fmap HSOpen . init oc ledger cs) >>= \case
           Just NotInInitState -> putStrLn @Text $ "You dummy, can't init now"
           Nothing -> pure ()
-    | c == "close" = liftIO $ close oc hh
+    | c == "close" =
+      liftIO $
+        withOpenState_ hh (fmap HSClosed . close oc) >>= \case
+          Just NotInOpenState -> putText "You dummy.. can't close now"
+          Nothing -> pure ()
     -- c == "commit" =
     | c == "newtx" = liftIO $ do
       tx <- loadTx "hardcoded/file/path"

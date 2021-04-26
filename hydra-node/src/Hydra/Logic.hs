@@ -58,7 +58,7 @@ data OnChainTx
 data HeadState tx
   = HSInit InitState
   | HSOpen (OpenState tx)
-  | ClosedState
+  | HSClosed ClosedState
 
 deriving instance Eq (OpenState tx) => Eq (HeadState tx)
 deriving instance Show (OpenState tx) => Show (HeadState tx)
@@ -71,14 +71,16 @@ data OpenState tx = OpenState
   , snapshots :: Snapshots
   }
 
-deriving instance Eq (LedgerState tx) => Eq (OpenState tx)
-deriving instance Show (LedgerState tx) => Show (OpenState tx)
-
 mkOpenState :: LedgerState tx -> OpenState tx
 mkOpenState mkLedgerState = OpenState mkLedgerState Transaction Snapshots
 
+deriving instance Eq (LedgerState tx) => Eq (OpenState tx)
+deriving instance Show (LedgerState tx) => Show (OpenState tx)
+
 data Transactions = Transaction deriving (Eq, Show)
 data Snapshots = Snapshots deriving (Eq, Show)
+
+data ClosedState = ClosedState deriving (Eq, Show)
 
 -- | Verification used to authenticate main chain transactions that are
 -- restricted to members of the Head protocol instance, i.e. the commit
