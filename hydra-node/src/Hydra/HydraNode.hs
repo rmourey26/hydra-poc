@@ -7,7 +7,7 @@ import Hydra.Ledger.MaryTest (MaryTest)
 import qualified Hydra.Ledger.MaryTest as MaryTest
 import Hydra.Logic (Event, HeadParameters (..), SnapshotStrategy (..), createHeadState)
 import Hydra.Node (
-  ClientSide,
+  ClientSide (..),
   EventQueue (nextEvent),
   HydraHead,
   HydraNetwork,
@@ -30,7 +30,13 @@ data HydraNode m tx = HydraNode
   , hydraHead :: HydraHead tx m
   }
 
-createNode :: IO (HydraNode IO (Tx MaryTest))
+type MaryHydraNode m = HydraNode m (Tx MaryTest)
+
+init :: Functor m => MaryHydraNode m -> m (Either Text ())
+init HydraNode{clientSideRepl = ClientSide{initCommand}} = do
+  bimap show (const ()) <$> initCommand
+
+createNode :: IO (MaryHydraNode IO)
 createNode = do
   eq <- createEventQueue
   hh <- createHydraHead headState ledger
@@ -45,6 +51,6 @@ createNode = do
 
   loadTx fp = panic $ "should load and decode a tx from " <> show fp
 
-runNode :: HydraNode IO (Tx MaryTest) -> IO ()
+runNode :: MaryHydraNode IO -> IO ()
 runNode HydraNode{eventQueue, hydraNetwork, onChainClient, clientSideRepl, hydraHead} =
   forever $ nextEvent eventQueue >>= handleNextEvent hydraNetwork onChainClient clientSideRepl hydraHead
