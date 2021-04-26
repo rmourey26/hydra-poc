@@ -33,30 +33,34 @@ spec = describe "Hydra Node" $ do
   it "does something" $ do
     hh <- createHydraHead InitState mockLedger
     res <- init (expectOnChain InitTx) hh (expectClientSide AcceptingTx)
-    res `shouldBe` Right ()
-    queryHeadState hh >>= shouldNotBe InitState
+    res `shouldBe` Nothing
+    queryHeadState hh >>= flip shouldSatisfy isOpen
 
   it "does send transactions received from client onto the network" $ do
     hh <- createHydraHead (OpenState $ SimpleHead.mkState ()) mockLedger
     (n, queryNetworkMsgs) <- recordNetwork
-    void $ newTx hh n ValidTx
+    newTx hh n ValidTx
+      `shouldReturn` Right Valid
     queryHeadState hh >>= flip shouldSatisfy isOpen
     queryNetworkMsgs `shouldReturn` [MsgReqTx $ ReqTx ValidTx]
 
   it "does not forward invalid transactions received from client" $ do
     hh <- createHydraHead (OpenState $ SimpleHead.mkState ()) mockLedger
-    newTx hh mockNetwork InvalidTx `shouldReturn` Invalid ValidationError
+    newTx hh mockNetwork InvalidTx
+      `shouldReturn` Right (Invalid ValidationError)
     queryHeadState hh >>= flip shouldSatisfy isOpen
 
   describe "handleReqTx" $ do
     it "does send ackTx on a valid reqTx transaction" $ do
       hh <- createHydraHead (OpenState $ SimpleHead.mkState ()) mockLedger
-      handleReqTx hh (expectNetwork AckTx) (ReqTx ValidTx) `shouldReturn` Nothing
+      handleReqTx hh (expectNetwork AckTx) (ReqTx ValidTx)
+        `shouldReturn` (Right $ Right ())
       queryHeadState hh >>= flip shouldSatisfy isOpen
 
     it "does nothing with an invalid reqTx transaction" $ do
       hh <- createHydraHead (OpenState $ SimpleHead.mkState ()) mockLedger
-      handleReqTx hh mockNetwork (ReqTx InvalidTx) `shouldReturn` Just InvalidTransaction
+      handleReqTx hh mockNetwork (ReqTx InvalidTx)
+        `shouldReturn` Left InvalidTransaction
       queryHeadState hh >>= flip shouldSatisfy isOpen
 
 data MockTx = ValidTx | InvalidTx
