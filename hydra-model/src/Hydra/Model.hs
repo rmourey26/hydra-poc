@@ -13,6 +13,7 @@ import qualified Shelley.Spec.Ledger.API as Shelley
 
 type Utxo = Shelley.UTxO MaryTest
 type Transaction = Shelley.Tx MaryTest
+type Ledger = Shelley.LedgerState MaryTest
 
 -- |A single `Action` to run on a specific node
 data Action = Action {targetNode :: NodeId, request :: Request}
@@ -53,12 +54,12 @@ data Model = Model
 
 data ModelState
   = Closed
-  | Open Utxo
+  | Open Ledger
   deriving (Eq, Show)
 
 ledger :: Model -> Utxo
 ledger Model{modelState = Closed} = noUTxO
-ledger Model{modelState = Open utxos} = utxos
+ledger Model{modelState = Open l} = Shelley._utxo . Shelley._utxoState $ l
 
 -- | Run a sequence of actions on a new `Model`
 -- Returns the `Model` after it's been updated

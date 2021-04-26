@@ -95,6 +95,7 @@ test-suite hydra-model-test
       cardano-ledger-shelley-ma,
       cardano-ledger-shelley-ma-test,
       containers -any,
+      data-default -any,
       hspec -any,
       hspec-core -any,
       hydra-model -any,
