@@ -32,6 +32,16 @@ mkLedgersEnv =
     , Ledgers.ledgersAccount = panic "Not implemented"
     }
 
+-- TODO: clarify the difference between LedgersEnv and LedgerEnv
+mkLedgerEnv :: Ledger.LedgerEnv MaryTest
+mkLedgerEnv =
+  Ledger.LedgerEnv
+    { Ledger.ledgerSlotNo = SlotNo 1
+    , Ledger.ledgerIx = 0
+    , Ledger.ledgerPp = emptyPParams
+    , Ledger.ledgerAccount = panic "Not implemented"
+    }
+
 mkLedgerState :: Ledger.LedgerState MaryTest
 mkLedgerState =
   def{_utxoState = def{_utxo = initUTxO}}
