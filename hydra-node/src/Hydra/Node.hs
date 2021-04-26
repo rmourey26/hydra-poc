@@ -43,10 +43,10 @@ handleNextEvent ::
   m ()
 handleNextEvent hn _oc _cs hh ledger = \case
   NetworkEvent (MsgReqTx reqTx) ->
-    fromOpenState hh (toOpenState . onReqTx ledger hn reqTx) >>= \case
-      Left NotInOpenState -> panic "received reqTx while not in open state?"
-      Right (Just InvalidTransaction) -> panic "how are invalid txs handled? simply log?"
-      Right Nothing -> pure ()
+    onReqTx ledger hn hh reqTx >>= \case
+      ReqTxNotInOpenState -> panic "received reqTx while not in open state?"
+      ReqTxInvalidTransaction -> panic "how are invalid txs handled? simply log?"
+      ReqTxSuccess -> pure ()
   e -> panic $ "unhandled event: " <> show e
 
 data NotInInitState = NotInInitState deriving (Eq, Show)
@@ -104,20 +104,46 @@ newTx ledger HydraNetwork{broadcast} tx st =
 data InvalidTransaction = InvalidTransaction
   deriving (Eq, Show)
 
+-- TODO(SN): remove this again
+data OnReqTxResult
+  = ReqTxNotInOpenState
+  | ReqTxInvalidTransaction
+  | ReqTxSuccess
+  deriving (Eq, Show)
+
 -- NOTE(SN): does not modify OpenState right now, but it could
 onReqTx ::
   Monad m =>
   Ledger tx ->
   HydraNetwork tx m ->
+  HydraHead tx m ->
   ReqTx tx ->
-  OpenState tx ->
-  m (OpenState tx, Maybe InvalidTransaction)
-onReqTx ledger HydraNetwork{broadcast} (ReqTx tx) st = do
-  -- TODO(SN): distinguish between 'valid-tx' and 'canApply', as well as 'wait' until applicable here
-  case canApply ledger (confirmedLedger st) tx of
-    Valid -> do
-      broadcast AckTx $> (st, Nothing)
-    _ -> pure (st, Just InvalidTransaction)
+  m OnReqTxResult
+onReqTx Ledger{canApply, applyTx} HydraNetwork{broadcast} hh@HydraHead{waitUntil} (ReqTx tx) = do
+  waitUntil canApplyToConfirmed $ \_s -> do
+    withHeadStateT hh $ do
+      s <- get
+      -- TODO(SN): MonadError / ExceptT?
+      case confLedger s of
+        Nothing -> pure ReqTxNotInOpenState
+        Just conf -> do
+          case applyTx conf tx of
+            Left err -> panic "smell: \"this should not happend\""
+            Right conf' -> do
+              modifyOpen (\os -> os{confirmedLedger = conf'})
+              lift $ broadcast ConfTx -- NOTE(SN): Directly confirm
+              pure ReqTxSuccess
+ where
+  canApplyToConfirmed s =
+    Just Valid == (flip canApply tx <$> confLedger s)
+
+  confLedger = \case
+    HSOpen os -> Just $ confirmedLedger os
+    _ -> Nothing
+
+  modifyOpen f = modify $ \case
+    HSOpen os -> HSOpen (f os)
+    s -> s
 
 close ::
   MonadThrow m =>
@@ -157,13 +183,16 @@ createEventQueue = do
 -- | Handle to access and modify a Hydra Head's state.
 data HydraHead tx m = HydraHead
   { modifyHeadStateM :: forall a. Applicative m => (HeadState tx -> m (HeadState tx, a)) -> m a
-  , -- | Wait for a condition on the 'HeadState' to become 'True' and invoke the
-    -- given continuation with the 'HeadState' which passed the predicate.
-    wait :: forall a. (HeadState tx -> Bool) -> (HeadState tx -> m a) -> m a
+  , -- | Wait until a condition on the 'HeadState' to becomes 'True' and invoke
+    -- the given continuation.
+    waitUntil :: forall a. (HeadState tx -> Bool) -> (HeadState tx -> m a) -> m a
   }
 
 modifyHeadState :: Applicative m => HydraHead tx m -> (HeadState tx -> (HeadState tx, a)) -> m a
 modifyHeadState hh f = modifyHeadStateM hh $ \s -> pure $ f s
+
+withHeadStateT :: Applicative m => HydraHead tx m -> StateT (HeadState tx) m a -> m a
+withHeadStateT hh (StateT action) = modifyHeadStateM hh (fmap swap . action)
 
 queryHeadState :: Applicative m => HydraHead tx m -> m (HeadState tx)
 queryHeadState = (`modifyHeadState` \s -> (s, s))
@@ -177,6 +206,7 @@ createHydraHead initialState = do
   pure
     HydraHead
       { modifyHeadStateM = modifyMVar mv
+      , waitUntil = panic "not implemented"
       }
 
 --
@@ -198,6 +228,7 @@ createHydraNetwork onMsg = do
  where
   simulatedBroadcast msg = do
     putStrLn @Text $ "[Network] should broadcast " <> show msg
+    onMsg msg -- NOTE(SN): assume broadcast is stupid and we see our own messages
     let ma = case msg of
           MsgReqTx _ -> Just AckTx
           AckTx -> Just ConfTx
@@ -207,6 +238,7 @@ createHydraNetwork onMsg = do
           ConfSn -> Nothing
     case ma of
       Just answer -> do
+        threadDelay 100000
         putStrLn @Text $ "[Network] simulating answer " <> show answer
         onMsg answer
       Nothing -> pure ()

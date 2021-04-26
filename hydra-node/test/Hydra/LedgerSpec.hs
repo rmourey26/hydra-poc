@@ -44,10 +44,10 @@ import Test.Shelley.Spec.Ledger.Utils (mkAddr, mkKeyPair)
 spec :: Spec
 spec = describe "Hydra Ledger (Mary)" $ do
   it "should reject invalid transactions" $ do
-    validateTx mkLedgerEnv mkLedgerState txInvalid `shouldBe` Invalid ValidationError
+    cardanoValidateTx mkLedgerEnv mkLedgerState txInvalid `shouldBe` Invalid ValidationError
 
   it "should validate transactions which simply transfer value" $ do
-    validateTx mkLedgerEnv mkLedgerState txSimpleTransfer `shouldBe` Valid
+    cardanoValidateTx mkLedgerEnv mkLedgerState txSimpleTransfer `shouldBe` Valid
 
 -- | Some invalid tx (unbalanced and no witnesses).
 txInvalid :: Ledger.Tx MaryTest

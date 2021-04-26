@@ -53,15 +53,16 @@ spec = describe "Hydra Node business logic" $ do
   describe "onReqTx" $ do
     it "does send ackTx on a valid reqTx transaction" $ do
       (n, queryNetworkMsgs) <- recordNetwork
-      (st, res) <- onReqTx mockLedger n (ReqTx ValidTx) (mkOpenState ())
-      st `shouldBe` mkOpenState ()
-      res `shouldBe` Nothing
-      queryNetworkMsgs `shouldReturn` [AckTx]
+      hh <- createHydraHead (HSOpen $ mkOpenState ())
+      onReqTx mockLedger mockNetwork hh (ReqTx ValidTx)
+        `shouldReturn` ReqTxSuccess
+      queryNetworkMsgs `shouldReturn` [AckTx :: HydraMessage MockTx]
 
     it "does nothing with an invalid reqTx transaction" $ do
-      (st, res) <- onReqTx mockLedger mockNetwork (ReqTx InvalidTx) (mkOpenState ())
-      st `shouldBe` mkOpenState ()
-      res `shouldBe` Just InvalidTransaction
+      hh <- createHydraHead (HSOpen $ mkOpenState ())
+      onReqTx mockLedger mockNetwork hh (ReqTx InvalidTx)
+        `shouldReturn` ReqTxInvalidTransaction
+      queryHeadState hh >>= flip shouldSatisfy isOpen
 
 data MockTx = ValidTx | InvalidTx
   deriving (Eq, Show)
