@@ -20,9 +20,12 @@ import Hydra.Logic (
   Event (NetworkEvent, OnChainEvent),
   HeadState (..),
   HydraMessage (AckSn, AckTx, ConfSn, ConfTx, MsgReqTx, ReqSn),
+  InitState,
   LogicError,
   OnChainTx (..),
+  OpenState (confirmedLedger),
   ReqTx (ReqTx),
+  mkOpenState,
  )
 import qualified Hydra.Logic as Logic
 import qualified Hydra.Logic.SimpleHead as SimpleHead
@@ -43,8 +46,8 @@ handleNextEvent ::
   HydraHead tx m ->
   Event tx ->
   m (Maybe (LogicError tx))
-handleNextEvent HydraNetwork{broadcast} OnChain{postTx} ClientSide{showInstruction} HydraHead{modifyHeadState, ledger} e = do
-  result <- modifyHeadState $ \s -> swap $ Logic.update ledger s e
+handleNextEvent HydraNetwork{broadcast} OnChain{postTx} ClientSide{showInstruction} hh@HydraHead{ledger} e = do
+  result <- modifyHeadState hh $ \s -> Logic.update ledger s e
   case result of
     Left err -> pure $ Just err
     Right out -> do
@@ -58,34 +61,31 @@ handleNextEvent HydraNetwork{broadcast} OnChain{postTx} ClientSide{showInstructi
 
 data NotInInitState = NotInInitState deriving (Eq, Show)
 
+withInitState :: Applicative m => HydraHead tx m -> (InitState -> m (HeadState tx)) -> m (Maybe NotInInitState)
+withInitState HydraHead{modifyHeadStateM} action =
+  modifyHeadStateM $ \case
+    HSInit is -> (,Nothing) <$> action is
+    s -> pure (s, Just NotInInitState)
+
 init ::
   MonadThrow m =>
   OnChain m ->
-  HydraHead tx m ->
+  Ledger tx ->
   ClientSide m ->
-  m (Maybe NotInInitState)
-init OnChain{postTx} HydraHead{modifyHeadState, ledger} ClientSide{showInstruction} = do
-  res <- modifyHeadState $ \s ->
-    case s of
-      InitState -> (Nothing, OpenState $ SimpleHead.mkState initLedgerState)
-      _ -> (Just NotInInitState, s)
-  case res of
-    Just e -> pure $ Just e
-    Nothing -> do
-      postTx InitTx
-      showInstruction AcceptingTx
-      pure Nothing
- where
-  Ledger{initLedgerState} = ledger
+  InitState ->
+  m (OpenState tx)
+init OnChain{postTx} Ledger{initLedgerState} ClientSide{showInstruction} _st = do
+  postTx InitTx
+  showInstruction AcceptingTx
+  pure $ mkOpenState initLedgerState
 
 data NotInOpenState = NotInOpenState deriving (Eq, Show)
 
 newTx :: Monad m => HydraHead tx m -> HydraNetwork tx m -> tx -> m (Either NotInOpenState ValidationResult)
 newTx hh@HydraHead{ledger} HydraNetwork{broadcast} tx = do
   queryHeadState hh >>= \case
-    OpenState st -> do
-      let confirmedLedger = SimpleHead.confirmedLedger st
-      case canApply ledger confirmedLedger tx of
+    HSOpen st -> do
+      case canApply ledger (confirmedLedger st) tx of
         Valid -> do
           broadcast (MsgReqTx $ ReqTx tx) $> Right Valid
         invalid -> pure $ Right invalid
@@ -97,10 +97,9 @@ data InvalidTransaction = InvalidTransaction
 handleReqTx :: Monad m => HydraHead tx m -> HydraNetwork tx m -> ReqTx tx -> m (Either InvalidTransaction (Either NotInOpenState ()))
 handleReqTx hh@HydraHead{ledger} HydraNetwork{broadcast} (ReqTx tx) = do
   queryHeadState hh >>= \case
-    OpenState st -> do
-      let confirmedLedger = SimpleHead.confirmedLedger st
+    HSOpen st -> do
       -- TODO(SN): distinguish between 'valid-tx' and 'canApply', as well as 'wait' until applicable here
-      case canApply ledger confirmedLedger tx of
+      case canApply ledger (confirmedLedger st) tx of
         Valid -> broadcast AckTx $> Right (Right ())
         _ -> pure $ Left InvalidTransaction
     _ -> pure $ Right $ Left NotInOpenState
@@ -143,21 +142,27 @@ createEventQueue = do
 
 -- | Handle to access and modify a Hydra Head's state.
 data HydraHead tx m = HydraHead
-  { modifyHeadState :: forall a. (HeadState tx -> (a, HeadState tx)) -> m a
+  { modifyHeadStateM :: forall a. Applicative m => (HeadState tx -> m (HeadState tx, a)) -> m a
   , ledger :: Ledger tx
   }
 
-queryHeadState :: HydraHead tx m -> m (HeadState tx)
+modifyHeadState :: Applicative m => HydraHead tx m -> (HeadState tx -> (HeadState tx, a)) -> m a
+modifyHeadState hh f = modifyHeadStateM hh $ \s -> pure $ f s
+
+queryHeadState :: Applicative m => HydraHead tx m -> m (HeadState tx)
 queryHeadState = (`modifyHeadState` \s -> (s, s))
 
-putState :: HydraHead tx m -> HeadState tx -> m ()
-putState HydraHead{modifyHeadState} new =
-  modifyHeadState $ \_old -> ((), new)
+putState :: Applicative m => HydraHead tx m -> HeadState tx -> m ()
+putState hh new = modifyHeadState hh $ const (new, ())
 
 createHydraHead :: HeadState tx -> Ledger tx -> IO (HydraHead tx IO)
 createHydraHead initialState ledger = do
-  tv <- newTVarIO initialState
-  pure HydraHead{modifyHeadState = atomically . stateTVar tv, ledger}
+  mv <- newMVar initialState
+  pure
+    HydraHead
+      { modifyHeadStateM = modifyMVar mv
+      , ledger -- TODO(SN): remove this from the 'HydraHead'
+      }
 
 --
 -- HydraNetwork handle to abstract over network access
@@ -249,7 +254,7 @@ createClientSideRepl ::
   HydraNetwork tx IO ->
   (FilePath -> IO tx) ->
   IO (ClientSide IO)
-createClientSideRepl oc hh hn loadTx = do
+createClientSideRepl oc hh@HydraHead{ledger} hn loadTx = do
   link =<< async runRepl
   pure cs
  where
@@ -272,7 +277,7 @@ createClientSideRepl oc hh hn loadTx = do
   replCommand c
     | c == "init" =
       liftIO $
-        init oc hh cs >>= \case
+        withInitState hh (fmap HSOpen . init oc ledger cs) >>= \case
           Just NotInInitState -> putStrLn @Text $ "You dummy, can't init now"
           Nothing -> pure ()
     | c == "close" = liftIO $ close oc hh

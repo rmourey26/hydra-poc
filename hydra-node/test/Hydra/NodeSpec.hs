@@ -12,10 +12,12 @@ import Hydra.Logic (
   ClientInstruction (..),
   HeadState (..),
   HydraMessage (..),
+  InitState (..),
   OnChainTx (..),
+  OpenState (..),
   ReqTx (..),
+  mkOpenState,
  )
-import qualified Hydra.Logic.SimpleHead as SimpleHead
 import Test.Hspec (
   Expectation,
   Spec,
@@ -31,13 +33,11 @@ import Test.Hspec (
 spec :: Spec
 spec = describe "Hydra Node" $ do
   it "does something" $ do
-    hh <- createHydraHead InitState mockLedger
-    res <- init (expectOnChain InitTx) hh (expectClientSide AcceptingTx)
-    res `shouldBe` Nothing
-    queryHeadState hh >>= flip shouldSatisfy isOpen
+    init (expectOnChain InitTx) mockLedger (expectClientSide AcceptingTx) InitState
+      `shouldReturn` mkOpenState ()
 
   it "does send transactions received from client onto the network" $ do
-    hh <- createHydraHead (OpenState $ SimpleHead.mkState ()) mockLedger
+    hh <- createHydraHead (HSOpen $ mkOpenState ()) mockLedger
     (n, queryNetworkMsgs) <- recordNetwork
     newTx hh n ValidTx
       `shouldReturn` Right Valid
@@ -45,20 +45,20 @@ spec = describe "Hydra Node" $ do
     queryNetworkMsgs `shouldReturn` [MsgReqTx $ ReqTx ValidTx]
 
   it "does not forward invalid transactions received from client" $ do
-    hh <- createHydraHead (OpenState $ SimpleHead.mkState ()) mockLedger
+    hh <- createHydraHead (HSOpen $ mkOpenState ()) mockLedger
     newTx hh mockNetwork InvalidTx
       `shouldReturn` Right (Invalid ValidationError)
     queryHeadState hh >>= flip shouldSatisfy isOpen
 
   describe "handleReqTx" $ do
     it "does send ackTx on a valid reqTx transaction" $ do
-      hh <- createHydraHead (OpenState $ SimpleHead.mkState ()) mockLedger
+      hh <- createHydraHead (HSOpen $ mkOpenState ()) mockLedger
       handleReqTx hh (expectNetwork AckTx) (ReqTx ValidTx)
-        `shouldReturn` (Right $ Right ())
+        `shouldReturn` Right (Right ())
       queryHeadState hh >>= flip shouldSatisfy isOpen
 
     it "does nothing with an invalid reqTx transaction" $ do
-      hh <- createHydraHead (OpenState $ SimpleHead.mkState ()) mockLedger
+      hh <- createHydraHead (HSOpen $ mkOpenState ()) mockLedger
       handleReqTx hh mockNetwork (ReqTx InvalidTx)
         `shouldReturn` Left InvalidTransaction
       queryHeadState hh >>= flip shouldSatisfy isOpen
@@ -78,7 +78,7 @@ mockLedger =
     }
 
 isOpen :: HeadState tx -> Bool
-isOpen OpenState{} = True
+isOpen HSOpen{} = True
 isOpen _ = False
 
 recordNetwork :: IO (HydraNetwork tx IO, IO [HydraMessage tx])

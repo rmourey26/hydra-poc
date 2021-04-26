@@ -4,7 +4,7 @@ module Hydra.Logic where
 
 import Cardano.Prelude
 
-import Hydra.Ledger (Ledger (Ledger, canApply), ValidationError, ValidationResult (Invalid, Valid))
+import Hydra.Ledger (Ledger (Ledger, canApply), LedgerState, ValidationError, ValidationResult (Invalid, Valid))
 import qualified Hydra.Logic.SimpleHead as SimpleHead
 
 data Event tx
@@ -56,12 +56,29 @@ data OnChainTx
   deriving (Eq, Show)
 
 data HeadState tx
-  = InitState
-  | OpenState (SimpleHead.State tx)
+  = HSInit InitState
+  | HSOpen (OpenState tx)
   | ClosedState
 
-deriving instance Eq (SimpleHead.State tx) => Eq (HeadState tx)
-deriving instance Show (SimpleHead.State tx) => Show (HeadState tx)
+deriving instance Eq (OpenState tx) => Eq (HeadState tx)
+deriving instance Show (OpenState tx) => Show (HeadState tx)
+
+data InitState = InitState deriving (Eq, Show)
+
+data OpenState tx = OpenState
+  { confirmedLedger :: LedgerState tx
+  , transactions :: Transactions
+  , snapshots :: Snapshots
+  }
+
+deriving instance Eq (LedgerState tx) => Eq (OpenState tx)
+deriving instance Show (LedgerState tx) => Show (OpenState tx)
+
+mkOpenState :: LedgerState tx -> OpenState tx
+mkOpenState mkLedgerState = OpenState mkLedgerState Transaction Snapshots
+
+data Transactions = Transaction deriving (Eq, Show)
+data Snapshots = Snapshots deriving (Eq, Show)
 
 -- | Verification used to authenticate main chain transactions that are
 -- restricted to members of the Head protocol instance, i.e. the commit
@@ -86,7 +103,7 @@ data SnapshotStrategy = SnapshotStrategy
 -- | Assume: We know the party members and their verification keys. These need
 -- to be exchanged somehow, eventually.
 createHeadState :: [Party] -> HeadParameters -> SnapshotStrategy -> HeadState tx
-createHeadState _ _ _ = InitState
+createHeadState _ _ _ = HSInit InitState
 
 data LogicError tx
   = InvalidEvent (Event tx) (HeadState tx)
