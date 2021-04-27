@@ -2,6 +2,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-deferred-type-errors #-}
+{-# OPTIONS_GHC -Wno-deprecations #-}
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 
 -- | A high-level model for a cluster of Hydra nodes
@@ -13,7 +14,7 @@ import Control.Monad.Class.MonadThrow (MonadThrow, throwIO)
 import Control.Monad.IOSim (runSim)
 import Data.Default (def)
 import Hydra.Ledger.MaryTest (MaryTest, noUTxO)
-import Hydra.Node (ClientSide, EventQueue, HydraNetwork, Node (..), OnChain, createEventQueue)
+import Hydra.Node (ClientSide (..), EventQueue, HydraNetwork (..), Node (..), OnChain (..), createEventQueue)
 import Hydra.Node.Run (emptyHydraHead, runNode)
 import qualified Hydra.Node.Run as Run
 import Shelley.Spec.Ledger.API (Coin (..), DPState (..), LedgerState (LedgerState), UTxOState (..))
@@ -109,7 +110,7 @@ runAction model@Model{cluster = HydraNodes nodes, modelState = ModelState [] Clo
   case find ((== target) . nodeId) nodes of
     Nothing -> pure model
     Just node -> init utxo node model
-runAction _ _ = panic "not implemented"
+runAction _ a = panic $ "action not implemented " <> show a
 
 -- TODO: Flesh out errors from the execution
 newtype ModelError = ModelError Text
@@ -151,11 +152,23 @@ runHydraNode = do
   withAsync (runNode node) $
     \thread -> pure $ RunningNode node thread
 
-mockClientSideRepl :: m (ClientSide m)
-mockClientSideRepl = panic "not implemented"
+mockClientSideRepl :: Applicative m => m (ClientSide m)
+mockClientSideRepl =
+  pure $ ClientSide $ const $ pure () -- ignore all client side instructions
 
-mockHydraNetwork :: EventQueue m e -> m (HydraNetwork m)
-mockHydraNetwork = panic "not implemented"
+mockHydraNetwork ::
+  Applicative m =>
+  EventQueue m e ->
+  m (HydraNetwork m)
+mockHydraNetwork _ =
+  pure $
+    HydraNetwork
+      { broadcast = const $ pure () -- just drop all messages
+      }
 
-mockChainClient :: EventQueue m e -> m (OnChain m)
-mockChainClient = panic "not implemented"
+mockChainClient ::
+  Applicative m =>
+  EventQueue m e ->
+  m (OnChain m)
+mockChainClient _ =
+  pure $ OnChain $ \_tx -> pure () -- don't post anyting on mainchain
