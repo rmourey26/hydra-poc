@@ -68,6 +68,9 @@ data Model m = Model
     modelState :: ModelState
   }
 
+selectNode :: NodeId -> HydraNodes m -> Maybe (HydraNode m)
+selectNode target (HydraNodes nodes) = find ((== target) . nodeId) nodes
+
 -- | The state of the system, including the expected `HeadState` and the nodes' state.
 data ModelState = ModelState
   { nodeLedgers :: [Utxo]
@@ -106,10 +109,10 @@ runAction ::
   Model m ->
   Action ->
   m (Model m)
-runAction model@Model{cluster = HydraNodes nodes, modelState = ModelState [] Closed} (Action target (Init utxo)) =
-  case find ((== target) . nodeId) nodes of
-    Nothing -> pure model
-    Just node -> init utxo node model
+runAction model@Model{cluster, modelState = ModelState [] Closed} (Action target (Init utxo)) =
+  selectNode target cluster & maybe (pure model) (init utxo model)
+runAction model@Model{cluster, modelState = ModelState [] Open{}} (Action target (NewTx tx)) =
+  selectNode target cluster & maybe (pure model) (newTx tx model)
 runAction _ a = panic $ "action not implemented " <> show a
 
 -- TODO: Flesh out errors from the execution
@@ -121,13 +124,22 @@ instance Exception ModelError
 init ::
   MonadThrow m =>
   Utxo ->
-  HydraNode m ->
   Model m ->
+  HydraNode m ->
   m (Model m)
-init utxo (runningNode -> RunningNode n _) m = do
+init utxo m (runningNode -> RunningNode n _) = do
   Run.init n >>= \case
     Left e -> throwIO (ModelError $ show e)
     Right () -> pure m{modelState = ModelState [] $ Open (mkLedger utxo)}
+
+newTx ::
+  Monad m =>
+  Transaction ->
+  Model m ->
+  HydraNode m ->
+  m (Model m)
+newTx tx m (runningNode -> RunningNode n _) = do
+  Run.newTx n tx >> pure m -- tx can be invalid
 
 initialiseModel ::
   MonadAsync m =>
