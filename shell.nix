@@ -23,6 +23,7 @@ let
   ghc = haskell-nix.compiler.${compiler};
   fourmolu = haskell-nix.tool compiler "fourmolu" "latest";
   ghcid = pkgs.haskellPackages.ghcid ;
+  cabal-plan = pkgs.haskellPackages.cabal-plan ;
   hspec-discover = pkgs.haskellPackages.hspec-discover ;
   libsodium-vrf = libsodium.overrideAttrs (oldAttrs: {
     name = "libsodium-1.0.18-vrf";
@@ -46,6 +47,7 @@ mkShell rec {
     ghc
     hls
     ghcid
+    # needed for HLS to work properly, see https://github.com/haskell/haskell-language-server/issues/176
     hspec-discover
     # For discovering libs (below)
     pkgconfig
