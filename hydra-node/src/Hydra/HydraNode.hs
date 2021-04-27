@@ -1,7 +1,9 @@
 -- | Build and run a fully working `HydraNode` using a Mary ledger
+-- TODO: The types should really be in `Hydra.Node`
 module Hydra.HydraNode where
 
 import Cardano.Prelude
+import Control.Exception.Safe (MonadThrow)
 import Hydra.Ledger (cardanoLedger)
 import Hydra.Ledger.MaryTest (MaryTest)
 import qualified Hydra.Ledger.MaryTest as MaryTest
@@ -19,6 +21,7 @@ import Hydra.Node (
   createHydraNetwork,
   handleNextEvent,
  )
+import qualified Hydra.Node as Node
 import Shelley.Spec.Ledger.API (Tx)
 import Shelley.Spec.Ledger.LedgerState ()
 
@@ -32,9 +35,12 @@ data HydraNode m tx = HydraNode
 
 type MaryHydraNode m = HydraNode m (Tx MaryTest)
 
-init :: Functor m => MaryHydraNode m -> m (Either Text ())
-init HydraNode{clientSideRepl = ClientSide{initCommand}} = do
-  bimap show (const ()) <$> initCommand
+init ::
+  MonadThrow m =>
+  MaryHydraNode m ->
+  m (Either Text ())
+init HydraNode{onChainClient, hydraHead, clientSideRepl} =
+  bimap show (const ()) <$> Node.init onChainClient hydraHead clientSideRepl
 
 createNode :: IO (MaryHydraNode IO)
 createNode = do
