@@ -14,7 +14,7 @@ import Shelley.Spec.Ledger.API (Coin (..), DPState (..), LedgerState (..), UTxOS
 -- work propertly.
 import Shelley.Spec.Ledger.PParams (PParams' (..))
 import Test.Cardano.Ledger.Mary ()
-import Test.Hspec (Spec, describe, xit)
+import Test.Hspec (Spec, describe, it)
 import Test.QuickCheck (Arbitrary (..), Gen, Property, choose, counterexample, elements, property)
 import Test.Shelley.Spec.Ledger.Generator.EraGen (genUtxo0)
 import Test.Shelley.Spec.Ledger.Generator.Presets (genEnv)
@@ -22,7 +22,16 @@ import Test.Shelley.Spec.Ledger.Generator.Utxo (genTx)
 
 spec :: Spec
 spec = describe "Hydra Nodes Model" $ do
-  xit "checks behavior of a 2 nodes cluster" $ property ledgerIsUpdatedWithNewTxs
+  it "checks behavior of a 2 nodes cluster" $ property ledgerIsUpdatedWithNewTxs
+
+ledgerIsUpdatedWithNewTxs ::
+  Actions -> Property
+ledgerIsUpdatedWithNewTxs Actions{actions} =
+  let model' = runModel actions
+      Nodes nodes = cluster model'
+      expectedUtxos = ledger model'
+      msg = "Expected all ledgers to have UTxOs matching " <> show expectedUtxos
+   in counterexample msg $ and [confirmedLedgerUtxos n == expectedUtxos | n <- nodes]
 
 -- |A sequence of `Action` to run.
 newtype Actions = Actions {actions :: [Action]}
@@ -51,12 +60,3 @@ genActions n (Open l@(LedgerState utxos deleg)) = do
           Right lg -> lg
           Left _ -> panic "Should not happen as the tx is guaranteed to be valid?"
   (Action toNode (NewTx tx) :) <$> genActions (n -1) (Open l')
-
-ledgerIsUpdatedWithNewTxs ::
-  Actions -> Property
-ledgerIsUpdatedWithNewTxs Actions{actions} =
-  let model' = runModel actions
-      Nodes nodes = cluster model'
-      expectedUtxos = ledger model'
-      msg = "Expected all ledgers to have UTxOs matching " <> show expectedUtxos
-   in counterexample msg $ and [confirmedLedgerUtxos n == expectedUtxos | n <- nodes]

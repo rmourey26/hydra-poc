@@ -65,10 +65,9 @@ ledger Model{modelState = Open l} = Shelley._utxo . Shelley._utxoState $ l
 -- Returns the `Model` after it's been updated
 runModel :: [Action] -> Model
 runModel acts =
-  let model = initialiseModel
-   in case runSim (foldM runAction model acts) of
-        Left _ -> panic "Not implemented"
-        Right m -> m
+  case runSim (initialiseModel >>= \model -> foldM runAction model acts) of
+    Left _ -> panic "Not implemented"
+    Right m -> m
 
 runAction :: Monad m => Model -> Action -> m Model
 runAction model@Model{cluster = Nodes nodes, modelState = Closed} (Action target Init) =
@@ -80,8 +79,14 @@ runAction _ _ = panic "not implemented"
 init :: Node -> m Model
 init = panic "not implemented"
 
-initialiseModel :: Model
-initialiseModel = Model (Nodes [Node 1, Node 2]) Closed
+initialiseModel :: Monad m => m Model
+initialiseModel = do
+  node1 <- runNode 1
+  node2 <- runNode 2
+  pure $ Model (Nodes [node1, node2]) Closed
+
+runNode :: NodeId -> m Node
+runNode _ = panic "not implemented"
 
 confirmedLedgerUtxos :: Node -> Utxo
 confirmedLedgerUtxos _ = noUTxO
