@@ -5,7 +5,7 @@ module Hydra.Node.Run where
 import Cardano.Prelude
 import Control.Monad.Class.MonadSTM (MonadSTM)
 import Control.Monad.Class.MonadThrow (MonadThrow)
-import Hydra.Ledger (cardanoLedger)
+import Hydra.Ledger (ValidationResult (Invalid, Valid), cardanoLedger)
 import Hydra.Ledger.MaryTest (MaryTest)
 import qualified Hydra.Ledger.MaryTest as MaryTest
 import Hydra.Logic (HeadParameters (..), SnapshotStrategy (..), createHeadState)
@@ -32,6 +32,16 @@ init ::
   m (Either Text ())
 init Node{onChainClient, hydraHead, clientSideRepl} =
   bimap show (const ()) <$> Node.init onChainClient hydraHead clientSideRepl
+
+newTx ::
+  Monad m =>
+  MaryHydraNode m ->
+  Tx MaryTest ->
+  m (Either Text ())
+newTx Node{hydraHead, hydraNetwork} tx =
+  Node.newTx hydraHead hydraNetwork tx >>= \case
+    Valid -> pure $ Right ()
+    Invalid e -> pure $ Left (show e)
 
 createNode :: IO (MaryHydraNode IO)
 createNode = do
