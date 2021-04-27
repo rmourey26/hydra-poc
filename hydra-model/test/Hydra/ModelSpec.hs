@@ -4,14 +4,14 @@
 module Hydra.ModelSpec where
 
 import Cardano.Prelude
-import Data.Default (def)
 import Hydra.Ledger (globals)
 import Hydra.Ledger.MaryTest (MaryTest, mkLedgerEnv, mkLedgersEnv)
-import Hydra.Model (Action (..), HeadState (..), ModelState (..), NodeId (..), Request (..), expectedUtxo, runModel)
-import Shelley.Spec.Ledger.API (Coin (..), DPState (..), LedgerState (..), UTxOState (..), applyTxsTransition)
+import Hydra.Model (Action (..), HeadState (..), ModelState (..), NodeId (..), Request (..), expectedUtxo, mkLedger, runModel)
+import Shelley.Spec.Ledger.API (LedgerState (..), applyTxsTransition)
 
 -- This is important as it provides some HasField instances which are needed for `applyTxsTransition` to
 -- work propertly.
+
 import Shelley.Spec.Ledger.PParams (PParams' (..))
 import Test.Cardano.Ledger.Mary ()
 import Test.Hspec (Spec, describe, it)
@@ -38,21 +38,20 @@ newtype Actions = Actions {actions :: [Action]}
 
 instance Arbitrary Actions where
   arbitrary = do
-    numActions <- choose (0, 10)
+    numActions <- choose (1, 10)
     Actions <$> genActions numActions Closed
 
 -- | Generate a sequence of actions which start with `Init`
 -- We generate valid tansactions strating from some initial ledger state and request
 -- random nodes to post `NewTx`
 genActions :: Int -> HeadState -> Gen [Action]
+genActions _ Failed{} = pure []
 genActions 0 _ = do
   toNode <- NodeId <$> elements [1, 2]
   pure [Action toNode Close]
 genActions n Closed = do
-  ds <- arbitrary
-  ps <- arbitrary
   utxos <- genUtxo0 (genEnv @MaryTest Proxy)
-  (Action 1 Init :) <$> genActions (n -1) (Open $ LedgerState (UTxOState utxos (Coin 0) (Coin 0) def) (DPState ds ps))
+  (Action 1 (Init utxos) :) <$> genActions (n -1) (Open $ mkLedger utxos)
 genActions n (Open l@(LedgerState utxos deleg)) = do
   tx <- genTx (genEnv @MaryTest Proxy) mkLedgerEnv (utxos, deleg)
   toNode <- NodeId <$> elements [1, 2]

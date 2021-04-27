@@ -2,17 +2,21 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-deferred-type-errors #-}
+{-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 
 -- | A high-level model for a cluster of Hydra nodes
 module Hydra.Model where
 
-import Cardano.Prelude hiding (Async, withAsync)
+import Cardano.Prelude hiding (Async, throwIO, withAsync)
 import Control.Monad.Class.MonadAsync (Async, MonadAsync, withAsync)
-import Control.Monad.Class.MonadThrow (MonadThrow)
+import Control.Monad.Class.MonadThrow (MonadThrow, throwIO)
 import Control.Monad.IOSim (runSim)
+import Data.Default (def)
 import Hydra.Ledger.MaryTest (MaryTest, noUTxO)
 import Hydra.Node (ClientSide, EventQueue, HydraNetwork, Node (..), OnChain, createEventQueue)
 import Hydra.Node.Run (emptyHydraHead, runNode)
+import qualified Hydra.Node.Run as Run
+import Shelley.Spec.Ledger.API (Coin (..), DPState (..), LedgerState (LedgerState), UTxOState (..))
 import qualified Shelley.Spec.Ledger.API as Shelley
 
 -- * Ledger Dependent Types
@@ -20,6 +24,11 @@ import qualified Shelley.Spec.Ledger.API as Shelley
 type Utxo = Shelley.UTxO MaryTest
 type Transaction = Shelley.Tx MaryTest
 type Ledger = Shelley.LedgerState MaryTest
+
+-- |Initialises a `Ledger` with given `Utxo`
+-- The reste of the state is set to `def`ault values.
+mkLedger :: Utxo -> Ledger
+mkLedger utxos = LedgerState (UTxOState utxos (Coin 0) (Coin 0) def) (DPState def def)
 
 -- |A single `Action` to run on a specific node
 data Action = Action {targetNode :: NodeId, request :: Request}
@@ -34,8 +43,7 @@ data Request
   = -- |Initialises a new head
     -- TODO: This is a simplification over the actual Hydra Head's dance of Init/Commit/CollectCom
     -- process.
-    -- TODO: The Utxo set is hardcoded in MaryTest module
-    Init
+    Init Utxo
   | -- |Submit a new transaction to the head
     NewTx Transaction
   | -- | Close the Head
@@ -59,6 +67,7 @@ data Model m = Model
     modelState :: ModelState
   }
 
+-- | The state of the system, including the expected `HeadState` and the nodes' state.
 data ModelState = ModelState
   { nodeLedgers :: [Utxo]
   , currentState :: HeadState
@@ -68,6 +77,7 @@ data ModelState = ModelState
 data HeadState
   = Closed
   | Open Ledger
+  | Failed Text
   deriving (Eq, Show)
 
 expectedUtxo :: HeadState -> Utxo
@@ -86,18 +96,37 @@ runModel acts =
         initial <- initialiseModel
         modelState <$> foldM runAction initial acts
     ) of
-    Left _ -> panic "Not implemented"
+    Left f -> ModelState [] (Failed $ show f)
     Right m -> m
 
-runAction :: Monad m => Model m -> Action -> m (Model m)
-runAction model@Model{cluster = HydraNodes nodes, modelState = ModelState [] Closed} (Action target Init) =
+-- | Run a single `Action` on the cluster of nodes
+runAction ::
+  MonadThrow m =>
+  Model m ->
+  Action ->
+  m (Model m)
+runAction model@Model{cluster = HydraNodes nodes, modelState = ModelState [] Closed} (Action target (Init utxo)) =
   case find ((== target) . nodeId) nodes of
     Nothing -> pure model
-    Just node -> init node
+    Just node -> init utxo node model
 runAction _ _ = panic "not implemented"
 
-init :: HydraNode m -> m (Model m)
-init = panic "not implemented"
+-- TODO: Flesh out errors from the execution
+newtype ModelError = ModelError Text
+  deriving (Eq, Show)
+
+instance Exception ModelError
+
+init ::
+  MonadThrow m =>
+  Utxo ->
+  HydraNode m ->
+  Model m ->
+  m (Model m)
+init utxo (runningNode -> RunningNode n _) m = do
+  Run.init n >>= \case
+    Left e -> throwIO (ModelError $ show e)
+    Right () -> pure m{modelState = ModelState [] $ Open (mkLedger utxo)}
 
 initialiseModel ::
   MonadAsync m =>
