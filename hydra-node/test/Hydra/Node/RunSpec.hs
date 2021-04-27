@@ -1,7 +1,7 @@
-module Hydra.HydraNodeSpec where
+module Hydra.Node.RunSpec where
 
 import Cardano.Prelude
-import Hydra.HydraNode (MaryHydraNode, createNode, init, runNode)
+import Hydra.Node.Run (MaryHydraNode, createNode, init, runNode)
 import Test.Hspec (Spec, around, describe, it, shouldReturn)
 
 spec :: Spec

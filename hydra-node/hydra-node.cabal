@@ -75,7 +75,7 @@ library
   import: project-config
   hs-source-dirs: src
   exposed-modules:
-    Hydra.HydraNode
+    Hydra.Node.Run
     Hydra.Node
     Hydra.Ledger
     Hydra.Ledger.MaryTest
@@ -143,7 +143,7 @@ test-suite tests
   import: project-config
   hs-source-dirs: test
   other-modules:
-    Hydra.HydraNodeSpec
+    Hydra.Node.RunSpec
     Hydra.NodeSpec
     Hydra.LedgerSpec
   main-is: Main.hs

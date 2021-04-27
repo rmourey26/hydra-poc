@@ -1,6 +1,6 @@
 -- | Build and run a fully working `HydraNode` using a Mary ledger
 -- TODO: The types should really be in `Hydra.Node`
-module Hydra.HydraNode where
+module Hydra.Node.Run where
 
 import Cardano.Prelude
 import Control.Exception.Safe (MonadThrow)
@@ -11,7 +11,7 @@ import Hydra.Logic (HeadParameters (..), SnapshotStrategy (..), createHeadState)
 import Hydra.Node (
   EventQueue (nextEvent),
   HydraHead,
-  HydraNode (..),
+  Node (..),
   createChainClient,
   createClientSideRepl,
   createEventQueue,
@@ -23,13 +23,13 @@ import qualified Hydra.Node as Node
 import Shelley.Spec.Ledger.API (Tx)
 import Shelley.Spec.Ledger.LedgerState ()
 
-type MaryHydraNode m = HydraNode m (Tx MaryTest)
+type MaryHydraNode m = Node m (Tx MaryTest)
 
 init ::
   MonadThrow m =>
   MaryHydraNode m ->
   m (Either Text ())
-init HydraNode{onChainClient, hydraHead, clientSideRepl} =
+init Node{onChainClient, hydraHead, clientSideRepl} =
   bimap show (const ()) <$> Node.init onChainClient hydraHead clientSideRepl
 
 createNode :: IO (MaryHydraNode IO)
@@ -39,7 +39,7 @@ createNode = do
   oc <- createChainClient eq
   hn <- createHydraNetwork eq
   cs <- createClientSideRepl oc hh hn loadTx
-  pure $ HydraNode eq hn oc cs hh
+  pure $ Node eq hn oc cs hh
  where
   loadTx fp = panic $ "should load and decode a tx from " <> show fp
 
@@ -51,5 +51,5 @@ emptyHydraHead = createHydraHead headState ledger
   defaultEnv = MaryTest.mkLedgersEnv
 
 runNode :: MaryHydraNode IO -> IO ()
-runNode hydraNode@HydraNode{eventQueue} =
+runNode hydraNode@Node{eventQueue} =
   forever $ nextEvent eventQueue >>= handleNextEvent hydraNode

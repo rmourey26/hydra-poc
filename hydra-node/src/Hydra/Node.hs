@@ -34,7 +34,7 @@ import qualified Hydra.Logic as Logic
 import qualified Hydra.Logic.SimpleHead as SimpleHead
 
 -- |A fully working `HydraNode` with all its sub-components
-data HydraNode m tx = HydraNode
+data Node m tx = Node
   { eventQueue :: EventQueue m (Event tx)
   , hydraNetwork :: HydraNetwork m
   , onChainClient :: OnChain m
@@ -83,7 +83,7 @@ handleNextEvent ::
   Show (LedgerState tx) =>
   Show tx =>
   MonadThrow m =>
-  HydraNode m tx ->
+  Node m tx ->
   Event tx ->
   m (Maybe (LogicError tx))
 handleNextEvent HydraNetwork{broadcast} OnChain{postTx} ClientSide{sendResponse} HydraHead{modifyHeadState, ledger} e = do
