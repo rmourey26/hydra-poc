@@ -7,7 +7,7 @@ import Cardano.Prelude
 import Data.Default (def)
 import Hydra.Ledger (globals)
 import Hydra.Ledger.MaryTest (MaryTest, mkLedgerEnv, mkLedgersEnv)
-import Hydra.Model (Action (..), Model (cluster), ModelState (..), NodeId (..), Nodes (..), Request (..), confirmedLedgerUtxos, ledger, runModel)
+import Hydra.Model (Action (..), HeadState (..), ModelState (..), NodeId (..), Request (..), expectedUtxo, runModel)
 import Shelley.Spec.Ledger.API (Coin (..), DPState (..), LedgerState (..), UTxOState (..), applyTxsTransition)
 
 -- This is important as it provides some HasField instances which are needed for `applyTxsTransition` to
@@ -21,17 +21,16 @@ import Test.Shelley.Spec.Ledger.Generator.Presets (genEnv)
 import Test.Shelley.Spec.Ledger.Generator.Utxo (genTx)
 
 spec :: Spec
-spec = describe "Hydra Nodes Model" $ do
-  it "checks behavior of a 2 nodes cluster" $ property ledgerIsUpdatedWithNewTxs
+spec =
+  describe "Hydra Nodes Model" $
+    it "checks behavior of a 2 nodes cluster" $ property ledgerIsUpdatedWithNewTxs
 
 ledgerIsUpdatedWithNewTxs ::
   Actions -> Property
 ledgerIsUpdatedWithNewTxs Actions{actions} =
-  let model' = runModel actions
-      Nodes nodes = cluster model'
-      expectedUtxos = ledger model'
-      msg = "Expected all ledgers to have UTxOs matching " <> show expectedUtxos
-   in counterexample msg $ and [confirmedLedgerUtxos n == expectedUtxos | n <- nodes]
+  let ModelState{nodeLedgers, currentState} = runModel actions
+      msg = "Expected all ledgers to have UTxOs matching " <> show currentState <> "after actions " <> show actions
+   in counterexample msg $ and [nodeLedger == expectedUtxo currentState | nodeLedger <- nodeLedgers]
 
 -- |A sequence of `Action` to run.
 newtype Actions = Actions {actions :: [Action]}
@@ -45,8 +44,10 @@ instance Arbitrary Actions where
 -- | Generate a sequence of actions which start with `Init`
 -- We generate valid tansactions strating from some initial ledger state and request
 -- random nodes to post `NewTx`
-genActions :: Int -> ModelState -> Gen [Action]
-genActions 0 _ = pure []
+genActions :: Int -> HeadState -> Gen [Action]
+genActions 0 _ = do
+  toNode <- NodeId <$> elements [1, 2]
+  pure [Action toNode Close]
 genActions n Closed = do
   ds <- arbitrary
   ps <- arbitrary
