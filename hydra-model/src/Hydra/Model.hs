@@ -107,7 +107,8 @@ runAction model@Model{cluster, modelState = ModelState [] Closed} (Action target
   selectNode target cluster & maybe (pure model) (init utxo model)
 runAction model@Model{cluster, modelState = ModelState [] Open{}} (Action target (NewTx tx)) =
   selectNode target cluster & maybe (pure model) (newTx tx model)
-runAction _ a = panic $ "action not implemented " <> show a
+runAction model@Model{cluster, modelState = ModelState [] Open{}} (Action target Close) =
+  selectNode target cluster & maybe (pure model) (close model)
 
 -- TODO: Flesh out errors from the execution
 newtype ModelError = ModelError Text
@@ -134,6 +135,14 @@ newTx ::
   m (Model m)
 newTx tx m (runningNode -> RunningNode n _) = do
   Run.newTx n tx >> pure m -- tx can be invalid
+
+close ::
+  MonadThrow m =>
+  Model m ->
+  HydraNode m ->
+  m (Model m)
+close m (runningNode -> RunningNode n _) = do
+  Run.close n >> pure m
 
 initialiseModel ::
   MonadAsync m =>

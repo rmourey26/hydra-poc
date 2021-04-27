@@ -4,21 +4,18 @@
 module Hydra.ModelSpec where
 
 import Cardano.Prelude
-import Hydra.Ledger (globals, mkLedger)
-import Hydra.Ledger.MaryTest (MaryTest, mkLedgerEnv, mkLedgersEnv)
+import Hydra.Ledger (mkLedger)
+import Hydra.Ledger.MaryTest (MaryTest)
 import Hydra.Model (Action (..), HeadState (..), ModelState (..), NodeId (..), Request (..), expectedUtxo, runModel)
-import Shelley.Spec.Ledger.API (LedgerState (..), applyTxsTransition)
 
 -- This is important as it provides some HasField instances which are needed for `applyTxsTransition` to
 -- work propertly.
 
-import Shelley.Spec.Ledger.PParams (PParams' (..))
 import Test.Cardano.Ledger.Mary ()
 import Test.Hspec (Spec, describe, it)
 import Test.QuickCheck (Arbitrary (..), Gen, Property, choose, counterexample, elements, property)
 import Test.Shelley.Spec.Ledger.Generator.EraGen (genUtxo0)
 import Test.Shelley.Spec.Ledger.Generator.Presets (genEnv)
-import Test.Shelley.Spec.Ledger.Generator.Utxo (genTx)
 
 spec :: Spec
 spec =
@@ -29,8 +26,10 @@ ledgerIsUpdatedWithNewTxs ::
   Actions -> Property
 ledgerIsUpdatedWithNewTxs Actions{actions} =
   let ModelState{nodeLedgers, currentState} = runModel actions
-      msg = "Expected all ledgers to have UTxOs matching " <> show currentState <> "after actions " <> show actions
-   in counterexample msg $ and [nodeLedger == expectedUtxo currentState | nodeLedger <- nodeLedgers]
+      msg = "Expected all ledgers to have UTxOs matching " <> show currentState <> " after actions " <> show actions
+   in counterexample msg $
+        length nodeLedgers == 2
+          && and [nodeLedger == expectedUtxo currentState | nodeLedger <- nodeLedgers]
 
 -- |A sequence of `Action` to run.
 newtype Actions = Actions {actions :: [Action]}
@@ -46,17 +45,18 @@ instance Arbitrary Actions where
 -- random nodes to post `NewTx`
 genActions :: Int -> HeadState -> Gen [Action]
 genActions _ Failed{} = pure []
-genActions 0 _ = do
-  toNode <- NodeId <$> elements [1, 2]
-  pure [Action toNode Close]
 genActions n Closed = do
   utxos <- genUtxo0 (genEnv @MaryTest Proxy)
   (Action 1 (Init utxos) :) <$> genActions (n -1) (Open $ mkLedger utxos)
-genActions n (Open l@(LedgerState utxos deleg)) = do
-  tx <- genTx (genEnv @MaryTest Proxy) mkLedgerEnv (utxos, deleg)
+genActions _ _ = do
   toNode <- NodeId <$> elements [1, 2]
-  let l' =
-        case applyTxsTransition globals mkLedgersEnv (pure tx) l of
-          Right lg -> lg
-          Left _ -> panic "Should not happen as the tx is guaranteed to be valid?"
-  (Action toNode (NewTx tx) :) <$> genActions (n -1) (Open l')
+  pure [Action toNode Close]
+
+-- genActions n (Open l@(LedgerState utxos deleg)) = do
+--   tx <- genTx (genEnv @MaryTest Proxy) mkLedgerEnv (utxos, deleg)
+--   toNode <- NodeId <$> elements [1, 2]
+--   let l' =
+--         case applyTxsTransition globals mkLedgersEnv (pure tx) l of
+--           Right lg -> lg
+--           Left _ -> panic "Should not happen as the tx is guaranteed to be valid?"
+--   (Action toNode (NewTx tx) :) <$> genActions (n -1) (Open l')

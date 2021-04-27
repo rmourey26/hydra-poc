@@ -43,6 +43,12 @@ newTx Node{hydraHead, hydraNetwork} tx =
     Valid -> pure $ Right ()
     Invalid e -> pure $ Left (show e)
 
+close ::
+  MonadThrow m =>
+  MaryHydraNode m ->
+  m ()
+close Node{hydraHead, onChainClient} = Node.close onChainClient hydraHead
+
 createNode :: IO (MaryHydraNode IO)
 createNode = do
   eq <- createEventQueue
