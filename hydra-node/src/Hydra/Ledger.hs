@@ -18,6 +18,9 @@ type family Utxo tx
 
 data Ledger tx = Ledger
   { canApply :: LedgerState tx -> tx -> ValidationResult
+  , -- |Initialises a `Ledger` with given `Utxo`
+    -- The reste of the state is set to `def`ault values.
+    mkLedger :: Utxo tx -> LedgerState tx
   , initLedgerState :: LedgerState tx
   }
 
@@ -37,17 +40,20 @@ type instance LedgerState (Ledger.Tx era) = Ledger.LedgerState era
 
 type instance Utxo (Ledger.Tx era) = Ledger.UTxO era
 
--- |Initialises a `Ledger` with given `Utxo`
--- The reste of the state is set to `def`ault values.
-mkLedger :: Default (SmallSteps.State (EraRule "PPUP" era)) => Ledger.UTxO era -> Ledger.LedgerState era
-mkLedger utxos = Ledger.LedgerState (Ledger.UTxOState utxos (Ledger.Coin 0) (Ledger.Coin 0) def) (Ledger.DPState def def)
-
-cardanoLedger :: Ledger.ApplyTx era => Ledger.LedgersEnv era -> Ledger.LedgerState era -> Ledger (Ledger.Tx era)
-cardanoLedger env initial =
+cardanoLedger ::
+  Default (SmallSteps.State (EraRule "PPUP" era)) =>
+  Ledger.ApplyTx era =>
+  Ledger.LedgersEnv era ->
+  Ledger.UTxO era ->
+  Ledger (Ledger.Tx era)
+cardanoLedger env utxos =
   Ledger
     { canApply = validateTx env
-    , initLedgerState = initial
+    , mkLedger
+    , initLedgerState = mkLedger utxos
     }
+ where
+  mkLedger u = Ledger.LedgerState (Ledger.UTxOState u (Ledger.Coin 0) (Ledger.Coin 0) def) (Ledger.DPState def def)
 
 validateTx ::
   Ledger.ApplyTx era =>

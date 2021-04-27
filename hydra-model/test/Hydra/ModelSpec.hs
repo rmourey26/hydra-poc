@@ -4,7 +4,6 @@
 module Hydra.ModelSpec where
 
 import Cardano.Prelude
-import Hydra.Ledger (mkLedger)
 import Hydra.Ledger.MaryTest (MaryTest)
 import Hydra.Model (Action (..), HeadState (..), ModelState (..), NodeId (..), Request (..), expectedUtxo, runModel)
 
@@ -54,7 +53,7 @@ genActions :: Int -> HeadState -> Gen [Action]
 genActions _ Failed{} = pure []
 genActions n Closed = do
   utxos <- genUtxo0 (genEnv @MaryTest Proxy)
-  (Action 1 (Init utxos) :) <$> genActions (n -1) (Open $ mkLedger utxos)
+  (Action 1 (Init utxos) :) <$> genActions (n -1) (Open utxos)
 genActions _ _ = do
   toNode <- NodeId <$> elements [1, 2]
   pure [Action toNode Close]

@@ -12,7 +12,6 @@ import Cardano.Prelude hiding (Async, throwIO, withAsync)
 import Control.Monad.Class.MonadAsync (Async, MonadAsync, withAsync)
 import Control.Monad.Class.MonadThrow (MonadThrow, throwIO)
 import Control.Monad.IOSim (runSim)
-import Hydra.Ledger (mkLedger)
 import Hydra.Ledger.MaryTest (MaryTest, noUTxO)
 import Hydra.Node (ClientSide (..), EventQueue, HydraNetwork (..), Node (..), OnChain (..), createEventQueue)
 import Hydra.Node.Run (emptyHydraHead, runNode)
@@ -75,13 +74,13 @@ data ModelState = ModelState
 
 data HeadState
   = Closed
-  | Open Ledger
+  | Open Utxo
   | Failed Text
   deriving (Eq, Show)
 
 expectedUtxo :: HeadState -> Utxo
 expectedUtxo Closed = noUTxO
-expectedUtxo (Open l) = ledgerUtxo l
+expectedUtxo (Open l) = l
 
 ledgerUtxo :: Ledger -> Utxo
 ledgerUtxo = Shelley._utxo . Shelley._utxoState
@@ -126,7 +125,7 @@ init ::
 init utxo m (runningNode -> RunningNode n _) = do
   Run.init n >>= \case
     Left e -> throwIO (ModelError $ show e)
-    Right () -> pure m{modelState = ModelState [] $ Open (mkLedger utxo)}
+    Right () -> pure m{modelState = ModelState [] $ Open utxo}
 
 newTx ::
   Monad m =>
