@@ -5,17 +5,9 @@
 -- | Top-level module to run a single Hydra node.
 module Hydra.Node where
 
-import Cardano.Prelude hiding (async, cancel, poll, threadDelay)
-import Control.Concurrent.STM (
-  newTQueueIO,
-  newTVarIO,
-  readTQueue,
-  stateTVar,
-  writeTQueue,
- )
-import Control.Exception.Safe (MonadThrow)
-import Control.Monad.Class.MonadAsync (async)
-import Control.Monad.Class.MonadTimer (threadDelay)
+import Cardano.Prelude hiding (atomically)
+import Control.Monad.Class.MonadSTM
+import Control.Monad.Class.MonadThrow
 import Hydra.Ledger
 import Hydra.Logic (
   ClientRequest (..),
@@ -114,9 +106,9 @@ data EventQueue m e = EventQueue
   , nextEvent :: m e
   }
 
-createEventQueue :: IO (EventQueue IO e)
+createEventQueue :: MonadSTM m => m (EventQueue m e)
 createEventQueue = do
-  q <- newTQueueIO
+  q <- atomically newTQueue -- TODO: Use bounded queue
   pure
     EventQueue
       { putEvent = atomically . writeTQueue q
@@ -146,9 +138,9 @@ putState :: HydraHead tx m -> HeadState tx -> m ()
 putState HydraHead{modifyHeadState} new =
   modifyHeadState $ const ((), new)
 
-createHydraHead :: HeadState tx -> Ledger tx -> IO (HydraHead tx IO)
+createHydraHead :: MonadSTM m => HeadState tx -> Ledger tx -> m (HydraHead tx m)
 createHydraHead initialState ledger = do
-  tv <- newTVarIO initialState
+  tv <- atomically $ newTVar initialState
   pure HydraHead{modifyHeadState = atomically . stateTVar tv, ledger}
 
 --

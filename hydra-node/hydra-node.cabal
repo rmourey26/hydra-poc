@@ -98,6 +98,7 @@ library
     , shelley-spec-ledger-test
     , safe-exceptions
     , stm
+    , repline
     , typed-protocols
   ghc-options:
     -haddock

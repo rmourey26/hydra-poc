@@ -3,7 +3,8 @@
 module Hydra.Node.Run where
 
 import Cardano.Prelude
-import Control.Exception.Safe (MonadThrow)
+import Control.Monad.Class.MonadSTM (MonadSTM)
+import Control.Monad.Class.MonadThrow (MonadThrow)
 import Hydra.Ledger (cardanoLedger)
 import Hydra.Ledger.MaryTest (MaryTest)
 import qualified Hydra.Ledger.MaryTest as MaryTest
@@ -43,13 +44,13 @@ createNode = do
  where
   loadTx fp = panic $ "should load and decode a tx from " <> show fp
 
-emptyHydraHead :: IO (HydraHead (Tx MaryTest) IO)
+emptyHydraHead :: MonadSTM m => m (HydraHead (Tx MaryTest) m)
 emptyHydraHead = createHydraHead headState ledger
  where
   headState = createHeadState [] HeadParameters SnapshotStrategy
   ledger = cardanoLedger defaultEnv
   defaultEnv = MaryTest.mkLedgersEnv
 
-runNode :: MaryHydraNode IO -> IO ()
+runNode :: MonadThrow m => MaryHydraNode m -> m ()
 runNode hydraNode@Node{eventQueue} =
   forever $ nextEvent eventQueue >>= handleNextEvent hydraNode
