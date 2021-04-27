@@ -99,6 +99,7 @@ library
     , safe-exceptions
     , stm
     , repline
+    , small-steps
     , typed-protocols
   ghc-options:
     -haddock

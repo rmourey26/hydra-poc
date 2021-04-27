@@ -4,9 +4,9 @@
 module Hydra.ModelSpec where
 
 import Cardano.Prelude
-import Hydra.Ledger (globals)
+import Hydra.Ledger (globals, mkLedger)
 import Hydra.Ledger.MaryTest (MaryTest, mkLedgerEnv, mkLedgersEnv)
-import Hydra.Model (Action (..), HeadState (..), ModelState (..), NodeId (..), Request (..), expectedUtxo, mkLedger, runModel)
+import Hydra.Model (Action (..), HeadState (..), ModelState (..), NodeId (..), Request (..), expectedUtxo, runModel)
 import Shelley.Spec.Ledger.API (LedgerState (..), applyTxsTransition)
 
 -- This is important as it provides some HasField instances which are needed for `applyTxsTransition` to

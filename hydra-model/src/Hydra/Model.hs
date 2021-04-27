@@ -12,12 +12,11 @@ import Cardano.Prelude hiding (Async, throwIO, withAsync)
 import Control.Monad.Class.MonadAsync (Async, MonadAsync, withAsync)
 import Control.Monad.Class.MonadThrow (MonadThrow, throwIO)
 import Control.Monad.IOSim (runSim)
-import Data.Default (def)
+import Hydra.Ledger (mkLedger)
 import Hydra.Ledger.MaryTest (MaryTest, noUTxO)
 import Hydra.Node (ClientSide (..), EventQueue, HydraNetwork (..), Node (..), OnChain (..), createEventQueue)
 import Hydra.Node.Run (emptyHydraHead, runNode)
 import qualified Hydra.Node.Run as Run
-import Shelley.Spec.Ledger.API (Coin (..), DPState (..), LedgerState (LedgerState), UTxOState (..))
 import qualified Shelley.Spec.Ledger.API as Shelley
 
 -- * Ledger Dependent Types
@@ -25,11 +24,6 @@ import qualified Shelley.Spec.Ledger.API as Shelley
 type Utxo = Shelley.UTxO MaryTest
 type Transaction = Shelley.Tx MaryTest
 type Ledger = Shelley.LedgerState MaryTest
-
--- |Initialises a `Ledger` with given `Utxo`
--- The reste of the state is set to `def`ault values.
-mkLedger :: Utxo -> Ledger
-mkLedger utxos = LedgerState (UTxOState utxos (Coin 0) (Coin 0) def) (DPState def def)
 
 -- |A single `Action` to run on a specific node
 data Action = Action {targetNode :: NodeId, request :: Request}

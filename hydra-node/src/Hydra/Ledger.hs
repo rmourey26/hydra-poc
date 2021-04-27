@@ -1,9 +1,11 @@
 module Hydra.Ledger where
 
 import Cardano.Prelude hiding (undefined)
-import Prelude (undefined)
 
+import Cardano.Ledger.Core (EraRule)
 import Cardano.Slotting.EpochInfo (fixedSizeEpochInfo)
+import qualified Control.State.Transition.Extended as SmallSteps
+import Data.Default (Default, def)
 import Shelley.Spec.Ledger.API (Globals (..), Network (Testnet))
 import qualified Shelley.Spec.Ledger.API as Ledger
 import Shelley.Spec.Ledger.BaseTypes (UnitInterval, mkActiveSlotCoeff, mkUnitInterval)
@@ -35,11 +37,16 @@ type instance LedgerState (Ledger.Tx era) = Ledger.LedgerState era
 
 type instance Utxo (Ledger.Tx era) = Ledger.UTxO era
 
-cardanoLedger :: Ledger.ApplyTx era => Ledger.LedgersEnv era -> Ledger (Ledger.Tx era)
-cardanoLedger env =
+-- |Initialises a `Ledger` with given `Utxo`
+-- The reste of the state is set to `def`ault values.
+mkLedger :: Default (SmallSteps.State (EraRule "PPUP" era)) => Ledger.UTxO era -> Ledger.LedgerState era
+mkLedger utxos = Ledger.LedgerState (Ledger.UTxOState utxos (Ledger.Coin 0) (Ledger.Coin 0) def) (Ledger.DPState def def)
+
+cardanoLedger :: Ledger.ApplyTx era => Ledger.LedgersEnv era -> Ledger.LedgerState era -> Ledger (Ledger.Tx era)
+cardanoLedger env initial =
   Ledger
     { canApply = validateTx env
-    , initLedgerState = undefined
+    , initLedgerState = initial
     }
 
 validateTx ::
