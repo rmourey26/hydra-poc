@@ -29,7 +29,7 @@ import qualified Hydra.Logic.SimpleHead as SimpleHead
 data Node m tx = Node
   { eventQueue :: EventQueue m (Event tx)
   , hydraNetwork :: HydraNetwork m
-  , onChainClient :: OnChain m
+  , onChainClient :: OnChain tx m
   , clientSideRepl :: ClientSide m
   , hydraHead :: HydraHead tx m
   }
@@ -74,6 +74,7 @@ runHydraNode HydraNode{eq, hn, oc, cs, hh} =
 handleNextEvent ::
   Show (LedgerState tx) =>
   Show tx =>
+  Show (Utxo tx) =>
   MonadThrow m =>
   Node m tx ->
   Event tx ->
@@ -181,16 +182,17 @@ data ChainError = ChainError
   deriving (Exception, Show)
 
 -- | Handle to interface with the main chain network
-newtype OnChain m = OnChain
+newtype OnChain tx m = OnChain
   { -- | Construct and send a transaction to the main chain corresponding to the
     -- given 'OnChainTx' event.
     -- Does at least throw 'ChainError'.
-    postTx :: MonadThrow m => OnChainTx -> m ()
+    postTx :: MonadThrow m => OnChainTx tx -> m ()
   }
 
 -- | Connects to a cardano node and sets up things in order to be able to
 -- construct actual transactions using 'OnChainTx' and send them on 'postTx'.
-createChainClient :: EventQueue IO (Event tx) -> IO (OnChain IO)
+createChainClient ::
+  Show tx => Show (Utxo tx) => EventQueue IO (Event tx) -> IO (OnChain tx IO)
 createChainClient EventQueue{putEvent} =
   pure OnChain{postTx = simulatedPostTx}
  where
@@ -198,8 +200,8 @@ createChainClient EventQueue{putEvent} =
     putStrLn @Text $ "[OnChain] should post tx for " <> show tx
     let ma = case tx of
           InitTx -> Just InitTx
-          CommitTx _ -> Just CollectComTx -- simulate other peer collecting
-          CollectComTx -> Nothing
+          CommitTx -> Just (CollectComTx $ panic "not implemented") -- simulate other peer collecting
+          CollectComTx _ -> Nothing
           CloseTx -> Just ContestTx -- simulate other peer contesting
           ContestTx -> Nothing
           FanoutTx -> Nothing

@@ -2,12 +2,13 @@
 
 module Hydra.Logic.SimpleHead where
 
-import           Cardano.Prelude         hiding ( State )
+import Cardano.Prelude hiding (State)
 
-import           Hydra.Ledger                   ( LedgerState )
+import Hydra.Ledger (LedgerState)
 
 data Event tx
-  = NewTxFromClient tx
+  = InitState (LedgerState tx)
+  | NewTxFromClient tx
   | ReqTxFromPeer
   | AckTxFromPeer
   | ConfTxFromPeer
@@ -17,8 +18,8 @@ data Event tx
 
 data State tx = State
   { confirmedLedger :: LedgerState tx
-  , transactions    :: Transactions
-  , snapshots       :: Snapshots
+  , transactions :: Transactions
+  , snapshots :: Snapshots
   }
 
 deriving instance Eq (LedgerState tx) => Eq (State tx)
@@ -41,5 +42,6 @@ data Effect tx
 
 update :: State tx -> Event tx -> (State tx, [Effect tx])
 update st = \case
+  InitState l -> (st{confirmedLedger = l}, [])
   NewTxFromClient _tx -> (st, [MulticastReqTx])
-  _                   -> panic "SimpleHead.TODO"
+  _ -> panic "SimpleHead.TODO"

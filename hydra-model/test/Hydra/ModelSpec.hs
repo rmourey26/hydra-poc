@@ -48,7 +48,7 @@ instance Arbitrary Actions where
 
 -- | Generate a sequence of actions which start with `Init`
 -- We generate valid tansactions strating from some initial ledger state and request
--- random nodes to post `NewTx`
+-- random nodes to post `NewTx`, then `Close` the head
 genActions :: Int -> HeadState -> Gen [Action]
 genActions _ Failed{} = pure []
 genActions n Closed = do

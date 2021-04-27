@@ -49,7 +49,6 @@ newtype HydraNodes m = HydraNodes
   {nodes :: [HydraNode m]}
 
 -- | An instance of a Hydra node
--- TODO: wrap actual `Hydra.Node.Node`
 data HydraNode m = HydraNode {nodeId :: NodeId, runningNode :: RunningNode m}
 
 data RunningNode m = RunningNode {node :: Node m Transaction, thread :: Async m ()}
@@ -186,6 +185,6 @@ mockHydraNetwork _ =
 mockChainClient ::
   Applicative m =>
   EventQueue m e ->
-  m (OnChain m)
+  m (OnChain Transaction m)
 mockChainClient _ =
   pure $ OnChain $ \_tx -> pure () -- don't post anyting on mainchain
