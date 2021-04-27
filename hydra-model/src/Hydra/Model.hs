@@ -46,7 +46,8 @@ data Request
   deriving (Eq, Show)
 
 -- |A cluster of Hydra `Node`s that is managed by a given `Model`
-newtype HydraNodes m = HydraNodes [HydraNode m]
+newtype HydraNodes m = HydraNodes
+  {nodes :: [HydraNode m]}
 
 -- | An instance of a Hydra node
 -- TODO: wrap actual `Hydra.Node.Node`
@@ -141,8 +142,10 @@ close ::
   Model m ->
   HydraNode m ->
   m (Model m)
-close m (runningNode -> RunningNode n _) = do
-  Run.close n >> pure m
+close m@Model{modelState} (runningNode -> RunningNode n _) = do
+  Run.close n
+  l <- catMaybes <$> mapM (Run.getConfirmedLedger . node . runningNode) (nodes . cluster $ m)
+  pure m{modelState = modelState{nodeLedgers = map ledgerUtxo l}}
 
 initialiseModel ::
   MonadAsync m =>

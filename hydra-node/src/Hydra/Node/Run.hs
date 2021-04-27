@@ -22,7 +22,7 @@ import Hydra.Node (
  )
 import qualified Hydra.Node as Node
 import Shelley.Spec.Ledger.API (Tx)
-import Shelley.Spec.Ledger.LedgerState ()
+import Shelley.Spec.Ledger.LedgerState (LedgerState)
 
 type MaryHydraNode m = Node m (Tx MaryTest)
 
@@ -48,6 +48,10 @@ close ::
   MaryHydraNode m ->
   m ()
 close Node{hydraHead, onChainClient} = Node.close onChainClient hydraHead
+
+getConfirmedLedger ::
+  Monad m => MaryHydraNode m -> m (Maybe (LedgerState MaryTest))
+getConfirmedLedger Node{hydraHead} = Node.getConfirmedLedger hydraHead
 
 createNode :: IO (MaryHydraNode IO)
 createNode = do

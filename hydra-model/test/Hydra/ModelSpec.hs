@@ -25,11 +25,18 @@ spec =
 ledgerIsUpdatedWithNewTxs ::
   Actions -> Property
 ledgerIsUpdatedWithNewTxs Actions{actions} =
-  let ModelState{nodeLedgers, currentState} = runModel actions
-      msg = "Expected all ledgers to have UTxOs matching " <> show currentState <> " after actions " <> show actions
-   in counterexample msg $
-        length nodeLedgers == 2
-          && and [nodeLedger == expectedUtxo currentState | nodeLedger <- nodeLedgers]
+  counterexample msg $
+    length nodeLedgers == 2
+      && and [nodeLedger == expectedUtxo currentState | nodeLedger <- nodeLedgers]
+ where
+  ModelState{nodeLedgers, currentState} = runModel actions
+  msg =
+    "Expected all ledgers to have UTxOs matching "
+      <> show currentState
+      <> " after actions "
+      <> show actions
+      <> ", got "
+      <> show nodeLedgers
 
 -- |A sequence of `Action` to run.
 newtype Actions = Actions {actions :: [Action]}
