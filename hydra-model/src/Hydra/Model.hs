@@ -91,10 +91,17 @@ runModel acts =
   case runSim
     ( do
         initial <- initialiseModel
-        modelState <$> foldM runAction initial acts
+        collectLedgers =<< foldM runAction initial acts
     ) of
     Left f -> ModelState [] (Failed $ show f)
     Right m -> m
+
+-- | Collect the UTXOs from all nodes
+-- TODO: This is not the right way to do it probably
+collectLedgers :: Monad m => Model m -> m ModelState
+collectLedgers m@Model{modelState} = do
+  l <- catMaybes <$> mapM (Run.getConfirmedLedger . node . runningNode) (nodes . cluster $ m)
+  pure $ modelState{nodeLedgers = map ledgerUtxo l}
 
 -- | Run a single `Action` on the cluster of nodes
 runAction ::
@@ -142,8 +149,7 @@ close ::
   m (Model m)
 close m@Model{modelState} (runningNode -> RunningNode n _) = do
   Run.close n
-  l <- catMaybes <$> mapM (Run.getConfirmedLedger . node . runningNode) (nodes . cluster $ m)
-  pure m{modelState = modelState{nodeLedgers = map ledgerUtxo l}}
+  pure $ m{modelState = modelState{currentState = Closed}}
 
 initialiseModel ::
   MonadAsync m =>
