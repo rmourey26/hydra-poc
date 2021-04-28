@@ -19,13 +19,13 @@ import Test.Shelley.Spec.Ledger.Generator.Presets (genEnv)
 spec :: Spec
 spec =
   describe "Hydra Nodes Model" $
-    it "checks behavior of a 2 nodes cluster" $ property ledgerIsUpdatedWithNewTxs
+    it "checks behavior of a 1 node cluster" $ property ledgerIsUpdatedWithNewTxs
 
 ledgerIsUpdatedWithNewTxs ::
   Actions -> Property
 ledgerIsUpdatedWithNewTxs Actions{actions} =
   counterexample msg $
-    length nodeLedgers == 2
+    length nodeLedgers == 1
       && and [nodeLedger == expectedUtxo currentState | nodeLedger <- nodeLedgers]
  where
   ModelState{nodeLedgers, currentState} = runModel actions
@@ -44,18 +44,18 @@ newtype Actions = Actions {actions :: [Action]}
 instance Arbitrary Actions where
   arbitrary = do
     numActions <- choose (1, 10)
-    Actions <$> genActions numActions Closed
+    Actions <$> genActions numActions (Closed Nothing)
 
 -- | Generate a sequence of actions which start with `Init`
 -- We generate valid tansactions strating from some initial ledger state and request
 -- random nodes to post `NewTx`, then `Close` the head
 genActions :: Int -> HeadState -> Gen [Action]
 genActions _ Failed{} = pure []
-genActions n Closed = do
+genActions n (Closed Nothing) = do
   utxos <- genUtxo0 (genEnv @MaryTest Proxy)
   (Action 1 (Init utxos) :) <$> genActions (n -1) (Open utxos)
 genActions _ _ = do
-  toNode <- NodeId <$> elements [1, 2]
+  toNode <- NodeId <$> elements [1]
   pure [Action toNode Close]
 
 -- genActions n (Open l@(LedgerState utxos deleg)) = do
