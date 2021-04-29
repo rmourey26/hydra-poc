@@ -69,7 +69,7 @@ emptyHydraHead = createHydraHead headState ledger
  where
   headState = createHeadState [] HeadParameters SnapshotStrategy
   ledger = cardanoLedger defaultEnv initUTxO
-  defaultEnv = MaryTest.mkLedgersEnv
+  defaultEnv = MaryTest.mkLedgersEnv 1
 
 runNode :: MonadThrow m => MaryHydraNode m -> m ()
 runNode hydraNode@Node{eventQueue} =

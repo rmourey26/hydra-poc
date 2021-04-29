@@ -1,4 +1,5 @@
 {-# LANGUAGE TypeApplications #-}
+{-# OPTIONS_GHC -Wno-deferred-type-errors #-}
 
 -- | A dummy "Mary" ledger useful for testing purpose
 --
@@ -13,7 +14,7 @@ import Data.Default (def)
 import qualified Data.Map as Map
 import qualified Data.Sequence.Strict as StrictSeq
 import qualified Data.Set as Set
-import Shelley.Spec.Ledger.API (Addr, Coin (..), KeyPair, KeyRole (Payment, Staking), StrictMaybe (SNothing), TxId, TxIn (TxIn), TxOut (..), UTxO, Wdrl (..))
+import Shelley.Spec.Ledger.API (AccountState (AccountState), Addr, Coin (..), KeyPair, KeyRole (Payment, Staking), StrictMaybe (SNothing), TxId, TxIn (TxIn), TxOut (..), UTxO, Wdrl (..))
 import qualified Shelley.Spec.Ledger.API as Ledger
 import qualified Shelley.Spec.Ledger.API as Ledgers
 import Shelley.Spec.Ledger.Keys (KeyPair (KeyPair))
@@ -24,22 +25,22 @@ import Shelley.Spec.Ledger.UTxO (UTxO (..), txid)
 import Test.Cardano.Ledger.EraBuffet (MaryEra, TestCrypto)
 import Test.Shelley.Spec.Ledger.Utils (mkAddr, mkKeyPair)
 
-mkLedgersEnv :: Ledgers.LedgersEnv MaryTest
-mkLedgersEnv =
+mkLedgersEnv :: Word64 -> Ledgers.LedgersEnv MaryTest
+mkLedgersEnv slot =
   Ledgers.LedgersEnv
-    { Ledgers.ledgersSlotNo = SlotNo 1
+    { Ledgers.ledgersSlotNo = SlotNo slot
     , Ledgers.ledgersPp = emptyPParams
     , Ledgers.ledgersAccount = panic "Not implemented"
     }
 
 -- TODO: clarify the difference between LedgersEnv and LedgerEnv
-mkLedgerEnv :: Ledger.LedgerEnv MaryTest
-mkLedgerEnv =
+mkLedgerEnv :: Word64 -> Ledger.LedgerEnv MaryTest
+mkLedgerEnv slot =
   Ledger.LedgerEnv
-    { Ledger.ledgerSlotNo = SlotNo 1
+    { Ledger.ledgerSlotNo = SlotNo slot
     , Ledger.ledgerIx = 0
     , Ledger.ledgerPp = emptyPParams
-    , Ledger.ledgerAccount = panic "Not implemented"
+    , Ledger.ledgerAccount = AccountState (Coin 0) (Coin 0)
     }
 
 mkLedgerState :: Ledger.LedgerState MaryTest

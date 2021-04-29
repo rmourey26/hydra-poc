@@ -11,7 +11,7 @@ import Hydra.Model (Action (..), HeadState (..), ModelState (..), NodeId (..), R
 import Shelley.Spec.Ledger.API (LedgerState (LedgerState), applyTxsTransition)
 import Shelley.Spec.Ledger.PParams (PParams' (..))
 import Test.Cardano.Ledger.Mary ()
-import Test.Hspec (Spec, describe, it, xit)
+import Test.Hspec (Spec, describe, it)
 import Test.QuickCheck (Arbitrary (..), Gen, Property, choose, counterexample, elements, property)
 import Test.Shelley.Spec.Ledger.Generator.EraGen (genUtxo0)
 import Test.Shelley.Spec.Ledger.Generator.Presets (genEnv)
@@ -21,7 +21,7 @@ spec :: Spec
 spec =
   describe "Hydra Nodes Model" $ do
     it "can Init/Close a 2-nodes cluster" $ property ledgerIsInitialisedWithCommittedUTxOs
-    xit "can post NewTx to a 2-nodes cluster" $ property ledgerIsUpdatedWithNewTxs
+    it "can post NewTx to a 2-nodes cluster" $ property ledgerIsUpdatedWithNewTxs
 
 ledgerIsInitialisedWithCommittedUTxOs ::
   InitAndClose -> Property
@@ -68,7 +68,7 @@ newtype Actions = Actions {actions :: [Action]}
 instance Arbitrary Actions where
   arbitrary = do
     numActions <- choose (1, 10)
-    Actions <$> genActions numActions (Closed Nothing)
+    Actions <$> genActions numActions numActions (Closed Nothing)
 
 -- shrink (Actions []) = []
 -- shrink (Actions [_]) = []
@@ -94,18 +94,19 @@ genCloseAction = do
 -- | Generate a sequence of actions which start with `Init`
 -- We generate valid tansactions strating from some initial ledger state and request
 -- random nodes to post `NewTx`, then `Close` the head
-genActions :: Int -> HeadState -> Gen [Action]
-genActions _ Failed{} = pure []
-genActions 0 _ = pure <$> genCloseAction
-genActions n (Closed Nothing) = do
+genActions :: Int -> Int -> HeadState -> Gen [Action]
+genActions _ _ Failed{} = pure []
+genActions _ 0 _ = pure <$> genCloseAction
+genActions m n (Closed Nothing) = do
   utxos <- genUtxo0 (genEnv @MaryTest Proxy)
   initAction <- genInitAction utxos
-  (initAction :) <$> genActions (n -1) (Open $ makeLedger utxos)
-genActions n (Open l@(LedgerState utxos deleg)) = do
-  tx <- genTx (genEnv @MaryTest Proxy) mkLedgerEnv (utxos, deleg)
+  (initAction :) <$> genActions m (n -1) (Open $ makeLedger utxos)
+genActions m n (Open l@(LedgerState utxos deleg)) = do
+  let slot = fromIntegral $ m - n
+  tx <- genTx (genEnv @MaryTest Proxy) (mkLedgerEnv $ slot - 1) (utxos, deleg)
   toNode <- NodeId <$> elements [1, 2]
   let l' =
-        case applyTxsTransition globals mkLedgersEnv (pure tx) l of
+        case applyTxsTransition globals (mkLedgersEnv slot) (pure tx) l of
           Right lg -> lg
           Left e -> panic $ "Should not happen as the tx " <> show tx <> " is guaranteed to be valid?: " <> show e
-  (Action toNode (NewTx tx) :) <$> genActions (n -1) (Open l')
+  (Action toNode (NewTx tx) :) <$> genActions m (n -1) (Open l')
