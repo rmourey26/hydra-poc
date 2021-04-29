@@ -5,7 +5,7 @@ module Hydra.ModelSpec where
 
 import Cardano.Prelude
 import Hydra.Ledger.MaryTest (MaryTest)
-import Hydra.Model (Action (..), HeadState (..), ModelState (..), NodeId (..), Request (..), expectedUtxo, runModel)
+import Hydra.Model (Action (..), HeadState (..), ModelState (..), NodeId (..), Request (..), Utxo, expectedUtxo, runModel)
 
 -- This is important as it provides some HasField instances which are needed for `applyTxsTransition` to
 -- work propertly.
@@ -19,23 +19,31 @@ import Test.Shelley.Spec.Ledger.Generator.Presets (genEnv)
 spec :: Spec
 spec =
   describe "Hydra Nodes Model" $
-    it "checks behavior of a 1 node cluster" $ property ledgerIsUpdatedWithNewTxs
+    it "can Init/Close a 2-nodes cluster" $ property ledgerIsInitialisedWithCommittedUTxOs
 
-ledgerIsUpdatedWithNewTxs ::
-  Actions -> Property
-ledgerIsUpdatedWithNewTxs Actions{actions} =
+ledgerIsInitialisedWithCommittedUTxOs ::
+  InitAndClose -> Property
+ledgerIsInitialisedWithCommittedUTxOs (InitAndClose actions) =
   counterexample msg $
-    length nodeLedgers == 1
+    length nodeLedgers == 2
       && and [nodeLedger == expectedUtxo currentState | nodeLedger <- nodeLedgers]
  where
   ModelState{nodeLedgers, currentState} = runModel actions
   msg =
     "Expected all ledgers to have UTxOs matching "
       <> show currentState
-      <> " after actions "
-      <> show actions
-      <> ", got "
+      <> " after Init and Close, got "
       <> show nodeLedgers
+
+newtype InitAndClose = InitAndClose [Action]
+  deriving (Eq, Show)
+
+instance Arbitrary InitAndClose where
+  arbitrary = do
+    utxos <- genUtxo0 (genEnv @MaryTest Proxy)
+    i <- genInitAction utxos
+    c <- genCloseAction
+    pure $ InitAndClose [i, c]
 
 -- |A sequence of `Action` to run.
 newtype Actions = Actions {actions :: [Action]}
@@ -46,6 +54,19 @@ instance Arbitrary Actions where
     numActions <- choose (1, 10)
     Actions <$> genActions numActions (Closed Nothing)
 
+chooseNode :: Gen NodeId
+chooseNode = NodeId <$> elements [1, 2]
+
+genInitAction :: Utxo -> Gen Action
+genInitAction utxos = do
+  nid <- chooseNode
+  pure $ Action nid (Init utxos)
+
+genCloseAction :: Gen Action
+genCloseAction = do
+  toNode <- chooseNode
+  pure $ Action toNode Close
+
 -- | Generate a sequence of actions which start with `Init`
 -- We generate valid tansactions strating from some initial ledger state and request
 -- random nodes to post `NewTx`, then `Close` the head
@@ -53,10 +74,9 @@ genActions :: Int -> HeadState -> Gen [Action]
 genActions _ Failed{} = pure []
 genActions n (Closed Nothing) = do
   utxos <- genUtxo0 (genEnv @MaryTest Proxy)
-  (Action 1 (Init utxos) :) <$> genActions (n -1) (Open utxos)
-genActions _ _ = do
-  toNode <- NodeId <$> elements [1]
-  pure [Action toNode Close]
+  initAction <- genInitAction utxos
+  (initAction :) <$> genActions (n -1) (Open utxos)
+genActions _ _ = pure <$> genCloseAction
 
 -- genActions n (Open l@(LedgerState utxos deleg)) = do
 --   tx <- genTx (genEnv @MaryTest Proxy) mkLedgerEnv (utxos, deleg)

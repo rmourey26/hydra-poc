@@ -175,19 +175,21 @@ initialiseModel ::
   m (Model m)
 initialiseModel = do
   st <- atomically $ newTVar (ModelState [] (Closed Nothing))
-  node1 <- HydraNode 1 <$> runHydraNode st
-  --  node2 <- HydraNode 2 <$> runHydraNode st
-  pure $ Model (HydraNodes [node1]) st
+  q1 <- createEventQueue
+  q2 <- createEventQueue
+  onChainClient <- mockChainClient st [q1, q2]
+  node1 <- HydraNode 1 <$> runHydraNode q1 onChainClient
+  node2 <- HydraNode 2 <$> runHydraNode q2 onChainClient
+  pure $ Model (HydraNodes [node1, node2]) st
 
 runHydraNode ::
   MonadAsync m =>
   MonadThrow m =>
-  TVar m ModelState ->
+  EventQueue m (Event Transaction) ->
+  OnChain Transaction m ->
   m (RunningNode m)
-runHydraNode st = do
-  eventQueue <- createEventQueue
+runHydraNode eventQueue onChainClient = do
   hydraHead <- emptyHydraHead
-  onChainClient <- mockChainClient st eventQueue
   hydraNetwork <- mockHydraNetwork eventQueue
   clientSideRepl <- mockClientSideRepl
   let node = Node{..}
@@ -210,13 +212,16 @@ mockHydraNetwork _ =
 mockChainClient ::
   MonadSTM m =>
   TVar m ModelState ->
-  EventQueue m (Event Transaction) ->
+  -- we need to propagate chain-to-head transactions to all nodes, this is
+  -- emulated by poasting the events in each node's queue
+  [EventQueue m (Event Transaction)] ->
   m (OnChain Transaction m)
-mockChainClient varm q =
+mockChainClient varm qs =
   pure $
     OnChain $ \case
       InitTx ->
-        trace @Text "posted init tx" $
-          atomically (expectedUtxo . currentState <$> readTVar varm)
-            >>= \utxos -> putEvent q (OnChainEvent $ CollectComTx utxos)
+        atomically (expectedUtxo . currentState <$> readTVar varm)
+          >>= \utxos -> do
+            mapM_ (`putEvent` OnChainEvent InitTx) qs
+            mapM_ (`putEvent` OnChainEvent (CollectComTx utxos)) qs
       _ -> pure ()
