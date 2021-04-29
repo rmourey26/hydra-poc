@@ -5,13 +5,14 @@
 module Hydra.ModelSpec where
 
 import Cardano.Prelude hiding (head)
+import Data.List (last)
 import Hydra.Ledger (globals)
 import Hydra.Ledger.MaryTest (MaryTest, mkLedgerEnv, mkLedgersEnv)
 import Hydra.Model (Action (..), HeadState (..), ModelState (..), NodeId (..), Request (..), Utxo, expectedUtxo, makeLedger, runModel)
 import Shelley.Spec.Ledger.API (LedgerState (LedgerState), applyTxsTransition)
 import Shelley.Spec.Ledger.PParams (PParams' (..))
 import Test.Cardano.Ledger.Mary ()
-import Test.Hspec (Spec, describe, it)
+import Test.Hspec (Spec, describe, it, xit)
 import Test.QuickCheck (Arbitrary (..), Gen, Property, choose, counterexample, elements, property)
 import Test.Shelley.Spec.Ledger.Generator.EraGen (genUtxo0)
 import Test.Shelley.Spec.Ledger.Generator.Presets (genEnv)
@@ -21,7 +22,7 @@ spec :: Spec
 spec =
   describe "Hydra Nodes Model" $ do
     it "can Init/Close a 2-nodes cluster" $ property ledgerIsInitialisedWithCommittedUTxOs
-    it "can post NewTx to a 2-nodes cluster" $ property ledgerIsUpdatedWithNewTxs
+    xit "can post NewTx to a 2-nodes cluster" $ property ledgerIsUpdatedWithNewTxs
 
 ledgerIsInitialisedWithCommittedUTxOs ::
   InitAndClose -> Property
@@ -70,13 +71,13 @@ instance Arbitrary Actions where
     numActions <- choose (1, 10)
     Actions <$> genActions numActions numActions (Closed Nothing)
 
--- shrink (Actions []) = []
--- shrink (Actions [_]) = []
--- shrink (Actions [_, _]) = []
--- shrink (Actions (i : rest)) =
---   let c = last rest
---       as = take (length rest - 2) (drop 1 rest)
---    in [Actions $ i : as <> [c]]
+  shrink (Actions []) = []
+  shrink (Actions [_]) = []
+  shrink (Actions [_, _]) = []
+  shrink (Actions (i : rest)) =
+    let c = last rest
+        as = take (length rest - 2) (drop 1 rest)
+     in [Actions $ i : as <> [c]]
 
 chooseNode :: Gen NodeId
 chooseNode = NodeId <$> elements [1, 2]
