@@ -14,11 +14,13 @@ import Control.Monad.Class.MonadSTM (MonadSTM (atomically), TVar, modifyTVar, ne
 import Control.Monad.Class.MonadThrow (MonadThrow, throwIO)
 import Control.Monad.Class.MonadTimer (threadDelay)
 import Control.Monad.IOSim (runSimOrThrow)
+import Data.Default (def)
 import Hydra.Ledger.MaryTest (MaryTest, noUTxO)
 import Hydra.Logic (Event (OnChainEvent), OnChainTx (CollectComTx, InitTx))
 import Hydra.Node (ClientSide (..), EventQueue (putEvent), HydraNetwork (..), Node (..), OnChain (..), createEventQueue)
 import Hydra.Node.Run (emptyHydraHead, runNode)
 import qualified Hydra.Node.Run as Run
+import qualified Shelley.Spec.Ledger.API as Ledger
 import qualified Shelley.Spec.Ledger.API as Shelley
 
 -- * Ledger Dependent Types
@@ -26,6 +28,9 @@ import qualified Shelley.Spec.Ledger.API as Shelley
 type Utxo = Shelley.UTxO MaryTest
 type Transaction = Shelley.Tx MaryTest
 type Ledger = Shelley.LedgerState MaryTest
+
+makeLedger :: Utxo -> Ledger
+makeLedger u = Ledger.LedgerState (Ledger.UTxOState u (Ledger.Coin 0) (Ledger.Coin 0) def) (Ledger.DPState def def)
 
 -- |A single `Action` to run on a specific node
 data Action = Action {targetNode :: NodeId, request :: Request}
@@ -76,17 +81,21 @@ data ModelState = ModelState
 
 data HeadState
   = Closed (Maybe Utxo)
-  | Open Utxo
+  | Open Ledger
   | Failed Text
   deriving (Eq, Show)
 
 expectedUtxo :: HeadState -> Utxo
 expectedUtxo (Closed Nothing) = noUTxO
 expectedUtxo (Closed (Just u)) = u
-expectedUtxo (Open l) = l
+expectedUtxo (Open l) = ledgerUtxo l
 
 ledgerUtxo :: Ledger -> Utxo
 ledgerUtxo = Shelley._utxo . Shelley._utxoState
+
+readTVarIO ::
+  MonadSTM m => TVar m a -> m a
+readTVarIO = atomically . readTVar
 
 -- | Run a sequence of actions on a new `Model`
 -- Returns the `Model` after it's been updated
@@ -97,7 +106,7 @@ runModel acts =
         initial <- initialiseModel
         model <- foldM runAction initial acts
         threadDelay 3.14e7
-        atomically $ readTVar (modelState model)
+        readTVarIO (modelState model)
     )
 
 -- | Collect the UTXOs from all nodes
@@ -116,7 +125,7 @@ runAction ::
   Action ->
   m (Model m)
 runAction model@Model{cluster, modelState} action =
-  (atomically . readTVar $ modelState)
+  (readTVarIO $ modelState)
     >>= \ms -> case (ms, action) of
       (ModelState [] (Closed Nothing), Action target (Init utxo)) ->
         selectNode target cluster & maybe (pure model) (init utxo model)
@@ -139,7 +148,7 @@ init ::
   HydraNode m ->
   m (Model m)
 init utxo m (runningNode -> RunningNode n _) = do
-  atomically $ writeTVar (modelState m) $ ModelState [] (Open utxo)
+  atomically $ writeTVar (modelState m) $ ModelState [] (Open $ makeLedger utxo)
   Run.init n >>= \case
     Left e -> throwIO (ModelError $ show e)
     Right () -> pure m
@@ -150,7 +159,7 @@ newTx ::
   Model m ->
   HydraNode m ->
   m (Model m)
-newTx tx m (runningNode -> RunningNode n _) = do
+newTx tx m (runningNode -> RunningNode n _) =
   Run.newTx n tx >> pure m -- tx can be invalid
 
 close ::
