@@ -15,13 +15,14 @@ import Control.Monad.Class.MonadThrow (MonadThrow, throwIO)
 import Control.Monad.Class.MonadTimer (threadDelay)
 import Control.Monad.IOSim (runSimOrThrow)
 import Data.Default (def)
-import Hydra.Ledger.MaryTest (MaryTest, noUTxO)
+import Hydra.Ledger.MaryTest (MaryTest, noUTxO, mkLedgersEnv)
 import Hydra.Logic (Event (OnChainEvent), OnChainTx (CollectComTx, InitTx))
 import Hydra.Node (ClientSide (..), EventQueue (putEvent), HydraNetwork (..), Node (..), OnChain (..), createEventQueue)
 import Hydra.Node.Run (emptyHydraHead, runNode)
 import qualified Hydra.Node.Run as Run
 import qualified Shelley.Spec.Ledger.API as Ledger
 import qualified Shelley.Spec.Ledger.API as Shelley
+import Hydra.Ledger (globals)
 
 -- * Ledger Dependent Types
 
@@ -46,8 +47,8 @@ data Request
     -- TODO: This is a simplification over the actual Hydra Head's dance of Init/Commit/CollectCom
     -- process.
     Init Utxo
-  | -- |Submit a new transaction to the head
-    NewTx Transaction
+  | -- |Submit a new transaction to the head at given slot
+    NewTx Word64 Transaction
   | -- | Close the Head
     Close
   deriving (Eq, Show)
@@ -129,8 +130,8 @@ runAction model@Model{cluster, modelState} action =
     >>= \ms -> case (ms, action) of
       (ModelState [] (Closed Nothing), Action target (Init utxo)) ->
         selectNode target cluster & maybe (pure model) (init utxo model)
-      (ModelState [] Open{}, Action target (NewTx tx)) ->
-        selectNode target cluster & maybe (pure model) (newTx tx model)
+      (ModelState [] Open{}, Action target (NewTx slot tx)) ->
+        selectNode target cluster & maybe (pure model) (newTx slot tx model)
       (ModelState [] Open{}, Action target Close) ->
         selectNode target cluster & maybe (pure model) (close model)
 
@@ -150,17 +151,37 @@ init ::
 init utxo m (runningNode -> RunningNode n _) = do
   atomically $ writeTVar (modelState m) $ ModelState [] (Open $ makeLedger utxo)
   Run.init n >>= \case
-    Left e -> throwIO (ModelError $ show e)
+    Left e -> throwIO (ModelError $ "Failed to init ledger "  <> show e)
     Right () -> pure m
 
 newTx ::
-  Monad m =>
+  MonadSTM m =>
+  MonadThrow m =>
+  Word64 ->
   Transaction ->
   Model m ->
   HydraNode m ->
   m (Model m)
-newTx tx m (runningNode -> RunningNode n _) =
-  Run.newTx n tx >> pure m -- tx can be invalid
+newTx slot tx m (runningNode -> RunningNode n _) = do
+  Run.newTx n tx >>= \case
+    Left e -> throwIO (ModelError $ "Failed to submit new TX" <> show e)
+    Right () -> do
+      atomically $
+        modifyTVar (modelState m) $
+          \ms ->
+            case currentState ms of
+              Open l ->
+                let
+                  env = mkLedgersEnv slot
+                  l' =
+                    case Shelley.applyTxsTransition globals env (pure tx) l of
+                      Right lg -> lg
+                      Left e -> panic $ "tx " <> show tx <> " is guaranteed to be valid?: " <> show e
+                in ms{currentState = Open l'}
+              _ -> ms
+      pure m
+
+
 
 close ::
   MonadSTM m =>
