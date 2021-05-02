@@ -9,15 +9,15 @@ import qualified Hydra.Logic.SimpleHead as SimpleHead
 
 data Event tx
   = ClientEvent (ClientRequest tx)
-  | NetworkEvent HydraMessage
+  | NetworkEvent (HydraMessage tx)
   | OnChainEvent (OnChainTx tx)
 
 deriving instance Eq tx => Eq (Utxo tx) => Eq (Event tx)
 deriving instance Show tx => Show (Utxo tx) => Show (Event tx)
 
 data Effect tx
-  = ClientEffect ClientResponse
-  | NetworkEffect HydraMessage
+  = ClientEffect ClientInstruction
+  | NetworkEffect (HydraMessage tx)
   | OnChainEffect (OnChainTx tx)
   | -- | Wait effect should be interpreted as a non-blocking interruption which
     -- retries on every state changes until the continuation returns Just{}.
@@ -38,14 +38,16 @@ data ClientResponse
   | CommandFailed
   deriving (Eq, Show)
 
-data HydraMessage
-  = ReqTx
+data HydraMessage tx
+  = ReqTx tx
   | AckTx
   | ConfTx
   | ReqSn
   | AckSn
   | ConfSn
-  deriving (Eq, Show)
+
+deriving instance Eq tx => Eq (HydraMessage tx)
+deriving instance Show tx => Show (HydraMessage tx)
 
 data OnChainTx tx
   = InitTx

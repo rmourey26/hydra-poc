@@ -208,8 +208,9 @@ initialiseModel = do
   q1 <- createEventQueue
   q2 <- createEventQueue
   onChainClient <- mockChainClient st [q1, q2]
-  node1 <- HydraNode 1 <$> runHydraNode q1 onChainClient
-  node2 <- HydraNode 2 <$> runHydraNode q2 onChainClient
+  hydraNetwork <- mockHydraNetwork [q1, q2]
+  node1 <- HydraNode 1 <$> runHydraNode q1 onChainClient hydraNetwork
+  node2 <- HydraNode 2 <$> runHydraNode q2 onChainClient hydraNetwork
   pure $ Model (HydraNodes [node1, node2]) st
 
 runHydraNode ::
@@ -217,10 +218,10 @@ runHydraNode ::
   MonadThrow m =>
   EventQueue m (Event Transaction) ->
   OnChain Transaction m ->
+  HydraNetwork Transaction m ->
   m (RunningNode m)
-runHydraNode eventQueue onChainClient = do
+runHydraNode eventQueue onChainClient hydraNetwork = do
   hydraHead <- emptyHydraHead
-  hydraNetwork <- mockHydraNetwork eventQueue
   clientSideRepl <- mockClientSideRepl
   let node = Node{..}
   async (runNode node) >>= \thread -> pure $ RunningNode node thread
@@ -231,8 +232,8 @@ mockClientSideRepl =
 
 mockHydraNetwork ::
   Applicative m =>
-  EventQueue m e ->
-  m (HydraNetwork m)
+  [EventQueue m e] ->
+  m (HydraNetwork Transaction m)
 mockHydraNetwork _ =
   pure $
     HydraNetwork

@@ -9,7 +9,7 @@ import Hydra.Ledger (LedgerState)
 data Event tx
   = InitState (LedgerState tx)
   | NewTxFromClient tx
-  | ReqTxFromPeer
+  | ReqTxFromPeer tx
   | AckTxFromPeer
   | ConfTxFromPeer
   | ReqSnFromPeer
@@ -34,7 +34,7 @@ data Snapshots = Snapshots
   deriving (Eq, Show)
 
 data Effect tx
-  = MulticastReqTx
+  = MulticastReqTx tx
   | MulticastReqSn
   | MulticastConfTx
   | SendAckTx
@@ -43,5 +43,5 @@ data Effect tx
 update :: State tx -> Event tx -> (State tx, [Effect tx])
 update st = \case
   InitState l -> (st{confirmedLedger = l}, [])
-  NewTxFromClient _tx -> (st, [MulticastReqTx])
+  NewTxFromClient tx -> (st, [MulticastReqTx tx])
   _ -> panic "SimpleHead.TODO"

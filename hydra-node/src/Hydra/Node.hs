@@ -28,7 +28,7 @@ import qualified Hydra.Logic.SimpleHead as SimpleHead
 -- |A fully working `HydraNode` with all its sub-components
 data Node m tx = Node
   { eventQueue :: EventQueue m (Event tx)
-  , hydraNetwork :: HydraNetwork m
+  , hydraNetwork :: HydraNetwork tx m
   , onChainClient :: OnChain tx m
   , clientSideRepl :: ClientSide m
   , hydraHead :: HydraHead tx m
@@ -149,20 +149,20 @@ createHydraHead initialState ledger = do
 --
 
 -- | Handle to interface with the hydra network and send messages "off chain".
-newtype HydraNetwork m = HydraNetwork
+newtype HydraNetwork tx m = HydraNetwork
   { -- | Send a 'HydraMessage' to the whole hydra network.
-    broadcast :: HydraMessage -> m ()
+    broadcast :: HydraMessage tx -> m ()
   }
 
 -- | Connects to a configured set of peers and sets up the whole network stack.
-createHydraNetwork :: EventQueue IO (Event tx) -> IO (HydraNetwork IO)
+createHydraNetwork :: Show tx => EventQueue IO (Event tx) -> IO (HydraNetwork tx IO)
 createHydraNetwork EventQueue{putEvent} =
   pure HydraNetwork{broadcast = simulatedBroadcast}
  where
   simulatedBroadcast msg = do
     putStrLn @Text $ "[Network] should broadcast " <> show msg
     let ma = case msg of
-          ReqTx -> Just AckTx
+          ReqTx _ -> Just AckTx
           AckTx -> Just ConfTx
           ConfTx -> Nothing
           ReqSn -> Just AckSn
