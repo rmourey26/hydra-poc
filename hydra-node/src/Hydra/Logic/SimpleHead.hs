@@ -44,4 +44,5 @@ update :: State tx -> Event tx -> (State tx, [Effect tx])
 update st = \case
   InitState l -> (st{confirmedLedger = l}, [])
   NewTxFromClient tx -> (st, [MulticastReqTx tx])
+  ReqTxFromPeer _tx -> panic "TODO: apply requested transaction"
   _ -> panic "SimpleHead.TODO"

@@ -16,7 +16,7 @@ import Control.Monad.Class.MonadTimer (threadDelay)
 import Control.Monad.IOSim (runSimOrThrow)
 import Data.Default (def)
 import Hydra.Ledger.MaryTest (MaryTest, noUTxO, mkLedgersEnv)
-import Hydra.Logic (Event (OnChainEvent), OnChainTx (CollectComTx, InitTx))
+import Hydra.Logic (Event (OnChainEvent, NetworkEvent), OnChainTx (CollectComTx, InitTx))
 import Hydra.Node (ClientSide (..), EventQueue (putEvent), HydraNetwork (..), Node (..), OnChain (..), createEventQueue)
 import Hydra.Node.Run (emptyHydraHead, runNode)
 import qualified Hydra.Node.Run as Run
@@ -231,13 +231,13 @@ mockClientSideRepl =
   pure $ ClientSide $ const $ pure () -- ignore all client side instructions
 
 mockHydraNetwork ::
-  Applicative m =>
-  [EventQueue m e] ->
+  Monad m =>
+  [EventQueue m (Event Transaction)] ->
   m (HydraNetwork Transaction m)
-mockHydraNetwork _ =
+mockHydraNetwork qs =
   pure $
     HydraNetwork
-      { broadcast = const $ pure () -- just drop all messages
+      { broadcast = \msg -> mapM_ (`putEvent` NetworkEvent msg) qs
       }
 
 mockChainClient ::
