@@ -39,7 +39,7 @@ data HydraNode tx m = HydraNode
   , hh :: HydraHead tx m
   , oc :: OnChain m
   , cs :: ClientSide m
-  , sendCommand :: Logic.ClientRequest tx -> m ()
+  , sendCommand :: Logic.ClientRequest tx -> m CommandResult
   }
 
 handleClientRequest :: HydraNode tx m -> ClientRequest tx -> m ()
