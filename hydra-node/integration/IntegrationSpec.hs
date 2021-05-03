@@ -11,6 +11,7 @@ import Hydra.Node (ClientSide (..), HydraNode (..), OnChain (..), createHydraNod
 import System.Timeout (timeout)
 import Test.Hspec (
   Spec,
+  around,
   describe,
   expectationFailure,
   it,

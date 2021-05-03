@@ -57,6 +57,9 @@ createHydraNode ledger = do
  where
   headState = Logic.createHeadState [] HeadParameters SnapshotStrategy
 
+sendCommand :: HydraNode tx m -> Logic.ClientRequest tx -> m ()
+sendCommand HydraNode{eq} = putEvent eq . Logic.ClientEvent
+
 runHydraNode ::
   MonadThrow m =>
   MonadIO m =>
