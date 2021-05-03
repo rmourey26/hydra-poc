@@ -39,6 +39,7 @@ data HydraNode tx m = HydraNode
   , hh :: HydraHead tx m
   , oc :: OnChain m
   , cs :: ClientSide m
+  , sendCommand :: Logic.ClientRequest tx -> m ()
   }
 
 handleClientRequest :: HydraNode tx m -> ClientRequest tx -> m ()
@@ -56,9 +57,6 @@ createHydraNode ledger = do
   HydraNode eq hn hh oc <$> createClientSide
  where
   headState = Logic.createHeadState [] HeadParameters SnapshotStrategy
-
-sendCommand :: HydraNode tx m -> Logic.ClientRequest tx -> m ()
-sendCommand HydraNode{eq} = putEvent eq . Logic.ClientEvent
 
 runHydraNode ::
   MonadThrow m =>
