@@ -46,7 +46,9 @@ mkShell rec {
     fourmolu
     ghc
     hls
+    # fast feedback loop
     ghcid
+    cabal-plan
     # needed for HLS to work properly, see https://github.com/haskell/haskell-language-server/issues/176
     hspec-discover
     # For discovering libs (below)
