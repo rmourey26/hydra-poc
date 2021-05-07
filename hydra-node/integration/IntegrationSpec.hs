@@ -5,13 +5,12 @@ module IntegrationSpec where
 import Cardano.Prelude
 import Control.Concurrent.STM (modifyTVar, newTVarIO, readTVarIO)
 import Data.IORef (modifyIORef', newIORef, readIORef)
-import Hydra.Ledger (Ledger (..), LedgerState, ValidationError (..), ValidationResult (Invalid, Valid))
+import Hydra.Ledger (Ledger (..), LedgerState, Utxo, ValidationError (..), ValidationResult (Invalid, Valid))
 import Hydra.Logic (ClientRequest (..), ClientResponse (..))
-import Hydra.Node (ClientSide (..), HydraNode (..), OnChain (..), createHydraNode, handleChainTx, handleClientRequest, runHydraNode)
+import Hydra.Node (ClientSide (..), Node (..), OnChain (..), createHydraNode, handleChainTx, handleClientRequest, runHydraNode)
 import System.Timeout (timeout)
 import Test.Hspec (
   Spec,
-  around,
   describe,
   expectationFailure,
   it,
@@ -120,7 +119,7 @@ data HydraProcess m = HydraProcess
   , queryNodeState :: m NodeState
   }
 
-simulatedChain :: IO (HydraNode MockTx IO -> IO (OnChain IO))
+simulatedChain :: IO (Node MockTx IO -> IO (OnChain MockTx IO))
 simulatedChain = do
   nodes <- newTVarIO []
   pure $ \n -> do
@@ -134,7 +133,7 @@ simulatedChain = do
     modifyIORef' refHistory (tx :)
     readTVarIO nodes >>= mapM_ (`handleChainTx` tx)
 
-startHydraNode :: Integer -> (HydraNode MockTx IO -> IO (OnChain IO)) -> IO (HydraProcess IO)
+startHydraNode :: Integer -> (Node MockTx IO -> IO (OnChain MockTx IO)) -> IO (HydraProcess IO)
 startHydraNode nodeId connectToChain = do
   node <- testHydraNode
   cc <- connectToChain node
@@ -155,13 +154,15 @@ startHydraNode nodeId connectToChain = do
       , nodeId
       }
  where
-  testHydraNode :: IO (HydraNode MockTx IO)
+  testHydraNode :: IO (Node MockTx IO)
   testHydraNode = createHydraNode mockLedger
 
 data MockTx = ValidTx | InvalidTx
   deriving (Eq, Show)
 
 type instance LedgerState MockTx = ()
+
+type instance Utxo MockTx = ()
 
 mockLedger :: Ledger MockTx
 mockLedger =
@@ -170,4 +171,5 @@ mockLedger =
         ValidTx -> Valid
         InvalidTx -> Invalid ValidationError
     , initLedgerState = ()
+    , mkLedger = panic "Not implemented"
     }

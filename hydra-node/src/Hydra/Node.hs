@@ -25,28 +25,32 @@ import Hydra.Logic (
 import qualified Hydra.Logic as Logic
 import qualified Hydra.Logic.SimpleHead as SimpleHead
 
--- |A fully working `HydraNode` with all its sub-components
-data Node m tx = Node
-  { eventQueue :: EventQueue m (Event tx)
-  , hydraNetwork :: HydraNetwork tx m
-  , onChainClient :: OnChain tx m
-  , clientSideRepl :: ClientSide m
-  , hydraHead :: HydraHead tx m
+-- |A fully working `Node` with all its sub-components
+data Node tx m = Node
+  { eq :: EventQueue m (Event tx)
+  , hn :: HydraNetwork tx m
+  , oc :: OnChain tx m
+  , hh :: HydraHead tx m
+  , cs :: ClientSide m
   }
 
-handleClientRequest :: HydraNode tx m -> ClientRequest tx -> m ()
-handleClientRequest HydraNode{eq} = putEvent eq . ClientEvent
+handleClientRequest :: Node tx m -> ClientRequest tx -> m ()
+handleClientRequest Node{eq} = putEvent eq . ClientEvent
 
-handleChainTx :: HydraNode tx m -> OnChainTx -> m ()
-handleChainTx HydraNode{eq} = putEvent eq . OnChainEvent
+handleChainTx :: Node tx m -> OnChainTx tx -> m ()
+handleChainTx Node{eq} = putEvent eq . OnChainEvent
 
-createHydraNode :: Ledger tx -> IO (HydraNode tx IO)
+createHydraNode ::
+  Show (Utxo tx) =>
+  Show tx =>
+  Ledger tx ->
+  IO (Node tx IO)
 createHydraNode ledger = do
   eq <- createEventQueue
   hh <- createHydraHead headState ledger
   oc <- createChainClient eq
   hn <- createHydraNetwork eq
-  HydraNode eq hn hh oc <$> createClientSide
+  Node eq hn oc hh <$> createClientSide
  where
   headState = Logic.createHeadState [] HeadParameters SnapshotStrategy
 
@@ -54,10 +58,11 @@ runHydraNode ::
   MonadThrow m =>
   MonadIO m =>
   Show (LedgerState tx) => -- TODO(SN): leaky abstraction of HydraHead
+  Show (Utxo tx) =>
   Show tx =>
-  HydraNode tx m ->
+  Node tx m ->
   m ()
-runHydraNode HydraNode{eq, hn, oc, cs, hh} =
+runHydraNode Node{eq, hn, oc, cs, hh} =
   -- NOTE(SN): here we would introduce concurrent head processing, e.g. with
   -- something like 'forM_ [0..1] $ async'
   forever $ do
@@ -76,7 +81,10 @@ handleNextEvent ::
   Show tx =>
   Show (Utxo tx) =>
   MonadThrow m =>
-  Node m tx ->
+  HydraNetwork tx m ->
+  OnChain tx m ->
+  ClientSide m ->
+  HydraHead tx m ->
   Event tx ->
   m (Maybe (LogicError tx))
 handleNextEvent HydraNetwork{broadcast} OnChain{postTx} ClientSide{sendResponse} HydraHead{modifyHeadState, ledger} e = do
@@ -200,7 +208,7 @@ createChainClient EventQueue{putEvent} =
     putStrLn @Text $ "[OnChain] should post tx for " <> show tx
     let ma = case tx of
           InitTx -> Just InitTx
-          CommitTx -> Just (CollectComTx $ panic "not implemented") -- simulate other peer collecting
+          CommitTx _ -> Just (CollectComTx $ panic "not implemented") -- simulate other peer collecting
           CollectComTx _ -> Nothing
           CloseTx -> Just ContestTx -- simulate other peer contesting
           ContestTx -> Nothing

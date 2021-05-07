@@ -15,14 +15,12 @@ import Control.Monad.Class.MonadThrow (MonadThrow, throwIO)
 import Control.Monad.Class.MonadTimer (threadDelay)
 import Control.Monad.IOSim (runSimOrThrow)
 import Data.Default (def)
-import Hydra.Ledger.MaryTest (MaryTest, noUTxO, mkLedgersEnv)
-import Hydra.Logic (Event (OnChainEvent, NetworkEvent), OnChainTx (CollectComTx, InitTx))
+import Hydra.Ledger (globals)
+import Hydra.Ledger.MaryTest (MaryTest, mkLedgersEnv, noUTxO)
+import Hydra.Logic (Event (NetworkEvent, OnChainEvent), OnChainTx (CollectComTx, InitTx))
 import Hydra.Node (ClientSide (..), EventQueue (putEvent), HydraNetwork (..), Node (..), OnChain (..), createEventQueue)
-import Hydra.Node.Run (emptyHydraHead, runNode)
-import qualified Hydra.Node.Run as Run
 import qualified Shelley.Spec.Ledger.API as Ledger
 import qualified Shelley.Spec.Ledger.API as Shelley
-import Hydra.Ledger (globals)
 
 -- * Ledger Dependent Types
 
@@ -60,7 +58,7 @@ newtype HydraNodes m = HydraNodes
 -- | An instance of a Hydra node
 data HydraNode m = HydraNode {nodeId :: NodeId, runningNode :: RunningNode m}
 
-data RunningNode m = RunningNode {node :: Node m Transaction, thread :: Async m ()}
+data RunningNode m = RunningNode {node :: Node Transaction m, thread :: Async m ()}
 
 -- |The `Model` which "drives" the nodes and maintains expected state.
 data Model m = Model
@@ -114,7 +112,7 @@ runModel acts =
 -- TODO: This is not the right way to do it probably
 collectLedgers :: MonadSTM m => Model m -> m (Model m)
 collectLedgers m@Model{modelState} = do
-  l <- catMaybes <$> mapM (Run.getConfirmedLedger . node . runningNode) (nodes . cluster $ m)
+  l <- catMaybes <$> mapM (getConfirmedLedger . node . runningNode) (nodes . cluster $ m)
   atomically $ modifyTVar modelState $ \ms -> ms{nodeLedgers = map ledgerUtxo l}
   pure m
 
@@ -150,8 +148,8 @@ init ::
   m (Model m)
 init utxo m (runningNode -> RunningNode n _) = do
   atomically $ writeTVar (modelState m) $ ModelState [] (Open $ makeLedger utxo)
-  Run.init n >>= \case
-    Left e -> throwIO (ModelError $ "Failed to init ledger "  <> show e)
+  init n >>= \case
+    Left e -> throwIO (ModelError $ "Failed to init ledger " <> show e)
     Right () -> pure m
 
 newTx ::
@@ -163,7 +161,7 @@ newTx ::
   HydraNode m ->
   m (Model m)
 newTx slot tx m (runningNode -> RunningNode n _) = do
-  Run.newTx n tx >>= \case
+  newTx n tx >>= \case
     Left e -> throwIO (ModelError $ "Failed to submit new TX" <> show e)
     Right () -> do
       atomically $
@@ -171,17 +169,14 @@ newTx slot tx m (runningNode -> RunningNode n _) = do
           \ms ->
             case currentState ms of
               Open l ->
-                let
-                  env = mkLedgersEnv slot
-                  l' =
-                    case Shelley.applyTxsTransition globals env (pure tx) l of
-                      Right lg -> lg
-                      Left e -> panic $ "tx " <> show tx <> " is guaranteed to be valid?: " <> show e
-                in ms{currentState = Open l'}
+                let env = mkLedgersEnv slot
+                    l' =
+                      case Shelley.applyTxsTransition globals env (pure tx) l of
+                        Right lg -> lg
+                        Left e -> panic $ "tx " <> show tx <> " is guaranteed to be valid?: " <> show e
+                 in ms{currentState = Open l'}
               _ -> ms
       pure m
-
-
 
 close ::
   MonadSTM m =>
@@ -191,7 +186,7 @@ close ::
   m (Model m)
 close m@Model{modelState} (runningNode -> RunningNode n _) = do
   void $ collectLedgers m
-  Run.close n
+  close n
   atomically $
     modifyTVar modelState $ \ms ->
       let u = expectedUtxo (currentState ms)

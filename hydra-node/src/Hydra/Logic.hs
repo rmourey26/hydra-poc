@@ -4,7 +4,7 @@ module Hydra.Logic where
 
 import Cardano.Prelude
 
-import Hydra.Ledger (Ledger (Ledger), LedgerState, ValidationError, initLedgerState)
+import Hydra.Ledger (Ledger (Ledger), LedgerState, Utxo, ValidationError, initLedgerState)
 import qualified Hydra.Logic.SimpleHead as SimpleHead
 
 data Event tx
@@ -16,7 +16,7 @@ deriving instance Eq tx => Eq (Utxo tx) => Eq (Event tx)
 deriving instance Show tx => Show (Utxo tx) => Show (Event tx)
 
 data Effect tx
-  = ClientEffect ClientInstruction
+  = ClientEffect ClientResponse
   | NetworkEffect (HydraMessage tx)
   | OnChainEffect (OnChainTx tx)
   | -- | Wait effect should be interpreted as a non-blocking interruption which
@@ -124,6 +124,7 @@ newtype Environment = Environment
 -- sub-'State'.
 update ::
   Show (LedgerState tx) =>
+  Show (Utxo tx) =>
   Show tx =>
   Environment ->
   Ledger tx ->
