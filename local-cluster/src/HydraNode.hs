@@ -7,9 +7,11 @@ import Cardano.Prelude
 import Control.Concurrent.Async (
   forConcurrently_,
  )
-import Network.Socket (Family (AF_UNIX), SockAddr (SockAddrUnix), SocketType (Stream), close, connect, defaultProtocol, socket, socketToHandle)
+import qualified Data.ByteString.Lazy as BSL
+import Data.Text as Text
+import qualified Data.Text.Encoding as Text
+import Network.WebSockets (Connection, DataMessage (Binary, Text), receiveDataMessage, runClient, sendClose, sendTextData)
 import Safe (readEitherSafe)
-import System.IO (BufferMode (LineBuffering), hGetLine, hSetBuffering)
 import System.Process (
   CreateProcess (..),
   proc,
@@ -19,8 +21,7 @@ import System.Timeout (timeout)
 
 data HydraNode = HydraNode
   { hydraNodeId :: Int
-  , inputStream :: Handle
-  , outputStream :: Handle
+  , connection :: Connection
   }
 
 -- | Deliberately distinct client request type to not take shortcuts.
@@ -38,48 +39,38 @@ data Response
   deriving (Eq, Show, Read)
 
 sendRequest :: HydraNode -> Request -> IO ()
-sendRequest HydraNode{hydraNodeId, inputStream} request =
-  putText ("Tester sending to " <> show hydraNodeId <> ": " <> show request) >> hPutStrLn inputStream (show @_ @Text request)
+sendRequest HydraNode{hydraNodeId, connection} request = do
+  putText ("Tester sending to " <> show hydraNodeId <> ": " <> show request)
+  sendTextData connection $ show @_ @Text request
 
 data WaitForResponseTimeout = WaitForResponseTimeout Int Response deriving (Show)
 instance Exception WaitForResponseTimeout
 
 wait3sForResponse :: [HydraNode] -> Response -> IO ()
 wait3sForResponse nodes expected = do
-  forConcurrently_ nodes $ \HydraNode{hydraNodeId, outputStream} -> do
+  forConcurrently_ nodes $ \HydraNode{hydraNodeId, connection} -> do
     -- The chain is slow...
-    result <- timeout 3_000_000 $ tryNext outputStream
+    result <- timeout 3_000_000 $ tryNext connection
     maybe (throwIO $ WaitForResponseTimeout hydraNodeId expected) pure result
  where
-  tryNext h = do
-    result <- readEitherSafe <$> hGetLine h
-    case result of
+  tryNext c = do
+    msg <-
+      receiveDataMessage c >>= \case
+        Text b _mt -> pure $ Text.decodeUtf8 $ BSL.toStrict b
+        Binary b -> pure $ Text.decodeUtf8 $ BSL.toStrict b
+    case readEitherSafe $ Text.unpack msg of
       Right r
-        | r == expected ->
-          pure ()
-      _ ->
-        tryNext h
+        | r == expected -> pure ()
+      _ -> tryNext c
 
 withHydraNode :: Int -> (HydraNode -> IO ()) -> IO ()
 withHydraNode hydraNodeId action = do
   withCreateProcess (hydraNodeProcess hydraNodeId) $
     \_stdin _stdout _stderr _ph -> do
-      bracket (open $ "/tmp/hydra.socket." <> show hydraNodeId) close client
- where
-  open addr =
-    bracketOnError (socket AF_UNIX Stream defaultProtocol) close $ \sock -> do
-      tryConnect sock addr
-      return sock
-
-  tryConnect sock addr =
-    connect sock (SockAddrUnix addr) `catch` \(_ :: IOException) -> do
-      threadDelay 100_000
-      tryConnect sock addr
-
-  client sock = do
-    h <- socketToHandle sock ReadWriteMode
-    hSetBuffering h LineBuffering
-    action $ HydraNode hydraNodeId h h
+      -- Create websocket connection to API
+      runClient "127.0.0.1" (4000 + hydraNodeId) "/" $ \con -> do
+        action $ HydraNode hydraNodeId con
+        sendClose con ("Bye" :: Text)
 
 data CannotStartHydraNode = CannotStartHydraNode Int deriving (Show)
 instance Exception CannotStartHydraNode
